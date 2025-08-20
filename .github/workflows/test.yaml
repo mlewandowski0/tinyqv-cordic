@@ -46,13 +46,13 @@ jobs:
             test/tb.vcd
             test/results.xml
 
-      - name : Upload CORDIC plots 
-        if : always()
+      - name: Upload CORDIC plots
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: cordic-plots-trigonometric
-          path: artifacts/cordic/* 
-          if-no-files-found: ignore
+          path: ${{ github.workspace }}/artifacts/cordic/*
+          if-no-files-found: error
           retention-days: 14
 
       - name: Add plots to job summary
@@ -61,9 +61,16 @@ jobs:
         run: |
           echo "## CORDIC sweep" >> "$GITHUB_STEP_SUMMARY"
           echo "" >> "$GITHUB_STEP_SUMMARY"
-          for img in artifacts/cordic/*.png; do
+          for img in "${{ github.workspace }}"/artifacts/cordic/*.png; do
             [ -f "$img" ] || continue
             echo "<details><summary>$(basename "$img")</summary>" >> "$GITHUB_STEP_SUMMARY"
             echo "<img src=\"data:image/png;base64,$(base64 -w0 "$img")\" alt=\"$(basename "$img")\" />" >> "$GITHUB_STEP_SUMMARY"
             echo "</details>" >> "$GITHUB_STEP_SUMMARY"
           done
+          
+      - name: List produced files
+        if: always()
+        shell: bash
+        run: |
+          echo "Workspace is: $GITHUB_WORKSPACE"
+          find "$GITHUB_WORKSPACE" -maxdepth 3 -type f \( -name "*.png" -o -name "*.csv" -o -name "results.xml" \) -print

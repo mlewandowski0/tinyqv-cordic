@@ -142,8 +142,8 @@ async def test_trigonometric_sweep_and_vis(dut):
     
     
     # Make plots for visualization
-    outdir = os.environ.get("CORDIC_PLOTS_DIR", "artifacts/cordic")
-    os.makedirs(outdir, exist_ok=True)
+    OUTDIR = Path(os.getenv("CORDIC_PLOTS_DIR", os.getenv("GITHUB_WORKSPACE", "."))) / "artifacts/cordic"
+    OUTDIR.mkdir(parents=True, exist_ok=True)
     
     plt.figure(figsize=(12, 5))
     plt.subplot(1, 2, 1)
@@ -155,7 +155,7 @@ async def test_trigonometric_sweep_and_vis(dut):
     plt.subplot(1, 2, 2)
     plt.plot(linspace, sines_true - sines, label='residue (true - predicted)', color='red')
     plt.legend()
-    plt.savefig(os.path.join(outdir, "sine.png"),  dpi=180, bbox_inches="tight")
+    plt.savefig(os.path.join(OUTDIR, "sine.png"),  dpi=180, bbox_inches="tight")
     plt.close()
 
 
@@ -169,14 +169,14 @@ async def test_trigonometric_sweep_and_vis(dut):
     plt.subplot(1, 2, 2)
     plt.plot(linspace, cosines_true - cosines, label='residue (true - predicted)', color='red')
     plt.legend()
-    plt.savefig(os.path.join(outdir, "cosine.png"), dpi=180, bbox_inches="tight")
+    plt.savefig(os.path.join(OUTDIR, "cosine.png"), dpi=180, bbox_inches="tight")
     plt.close()
     
     # (optional) also stash numeric data for later:
-    np.savetxt(os.path.join(outdir, "sine_vs_true.csv"),
+    np.savetxt(os.path.join(OUTDIR, "sine_vs_true.csv"),
             np.c_[linspace, sines_true, sines],
             delimiter=",", header="deg,true_sin,cordic_sin", comments="")
-    np.savetxt(os.path.join(outdir, "cosine_vs_true.csv"),
+    np.savetxt(os.path.join(OUTDIR, "cosine_vs_true.csv"),
             np.c_[linspace, cosines_true, cosines],
             delimiter=",", header="deg,true_cos,cordic_cos", comments="")
         
