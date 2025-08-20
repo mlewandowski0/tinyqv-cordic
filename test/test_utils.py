@@ -12,6 +12,9 @@ def is_close_rtol(pred, true, r_tol = 1e-2):
 def is_close_atol(pred, true, a_tol = 1e-2):
     return abs(pred - true)  < a_tol
 
+def format_to_fixed_width(value, width):
+    return format(value, f'0{width}b')
+
 
 # BITS for mode
 MODE_BITS           = 1
@@ -79,4 +82,80 @@ async def test_sin_cos(dut, tqv, angle, tol_mode="rel", tol=0.01):
 
 
     dut._log.info(f"Finished CORDIC computation for angle {angle} degrees\n\n")
+    return out1, out2
+
+# currently without scaler !!! TODO
+async def use_multiplication_mode(dut, tqv, A, B, alpha_one_position, tol_mode="rel", tol=0.01):
+    
+
+    await tqv.write_word_reg(1, A)
+    await tqv.write_word_reg(2, B)
+    await tqv.write_byte_reg(3, alpha_one_position)
+
+    # configure the cordic : set the mode to ROTATING, LINEAR, and running
+    # this corresponds to setting it to       {1'b1,,  2'b00,         1'b1 }
+    
+    config_to_write = (LINEAR_MODE << MODE_BITS) | (1 << IS_ROTATING_BIT) | 1     
+    dut._log.info(f"Configuring CORDIC with {config_to_write:#04x} ({bin(config_to_write)}) (mode={CIRCULAR_MODE}, is_rotating=1, start=1)")
+    await tqv.write_byte_reg(0, config_to_write)
+   
+    # check if the device is busy
+    await ClockCycles(dut.clk, 1)
+    #assert await tqv.read_byte_reg(6) == 1, "status register should be 1 (BUSY)"
+
+    await ClockCycles(dut.clk, 11)
+    #assert await tqv.read_byte_reg(6) == 2, "status register should be 2 (DONE)"
+
+    out1 = await tqv.read_hword_reg(4)
+    out2 = await tqv.read_hword_reg(5)
+    
+    
+    # because we read unsigned 16bit half word, we need to conver it to signed representation
+    if out1 & (1<<15):
+        out1 = out1 - 2**16
+    
+    if out2 & (1<<15):
+        out2 = out2 - 2**16
+
+    dut._log.info(f"out1 = {out1:0{16}b}, out2 = {out2:0{16}b}")
+    dut._log.info(f"out1 = {out1}, out2 = {out2}")
+    
+    return out1, out2
+
+# currently without scaler !!! TODO
+async def use_division_mode(dut, tqv, A, B, alpha_one_position, tol_mode="rel", tol=0.01):
+    
+
+    await tqv.write_word_reg(1, A)
+    await tqv.write_word_reg(2, B)
+    await tqv.write_byte_reg(3, alpha_one_position)
+
+    # configure the cordic : set the mode to ROTATING, LINEAR, and running
+    # this corresponds to setting it to       {1'b0,,  2'b00,         1'b1 }
+    
+    config_to_write = (LINEAR_MODE << MODE_BITS) |  1     
+    dut._log.info(f"Configuring CORDIC with {config_to_write:#04x} ({bin(config_to_write)}) (mode={CIRCULAR_MODE}, is_rotating=0, start=1)")
+    await tqv.write_byte_reg(0, config_to_write)
+   
+    # check if the device is busy
+    await ClockCycles(dut.clk, 1)
+    #assert await tqv.read_byte_reg(6) == 1, "status register should be 1 (BUSY)"
+
+    await ClockCycles(dut.clk, 11)
+    #assert await tqv.read_byte_reg(6) == 2, "status register should be 2 (DONE)"
+
+    out1 = await tqv.read_hword_reg(4)
+    out2 = await tqv.read_hword_reg(5)
+    
+    
+    # because we read unsigned 16bit half word, we need to conver it to signed representation
+    if out1 & (1<<15):
+        out1 = out1 - 2**16
+    
+    if out2 & (1<<15):
+        out2 = out2 - 2**16
+
+    dut._log.info(f"out1 = {out1:0{16}b}, out2 = {out2:0{16}b}")
+    dut._log.info(f"out1 = {out1}, out2 = {out2}")
+    
     return out1, out2
