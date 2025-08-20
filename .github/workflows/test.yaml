@@ -45,3 +45,25 @@ jobs:
           path: |
             test/tb.vcd
             test/results.xml
+
+      - name : Upload CORDIC plots 
+        if : always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cordic-plots-trigonometric
+          path: artifacts/cordic/* 
+          if-no-files-found: ignore
+          retention-days: 14
+
+      - name: Add plots to job summary
+        if: always()
+        shell: bash
+        run: |
+          echo "## CORDIC sweep" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          for img in artifacts/cordic/*.png; do
+            [ -f "$img" ] || continue
+            echo "<details><summary>$(basename "$img")</summary>" >> "$GITHUB_STEP_SUMMARY"
+            echo "<img src=\"data:image/png;base64,$(base64 -w0 "$img")\" alt=\"$(basename "$img")\" />" >> "$GITHUB_STEP_SUMMARY"
+            echo "</details>" >> "$GITHUB_STEP_SUMMARY"
+          done

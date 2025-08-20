@@ -9,7 +9,11 @@ from tqv import TinyQV
 from fixed_point import *
 import math 
 import numpy as np
+
+import os
+import matplotlib
 import matplotlib.pyplot as plt
+matplotlib.use("Agg")  # headless backend
 
 def angle_to_rad(angle):
     return angle * math.pi / 180.
@@ -136,6 +140,11 @@ async def test_trigonometric_sweep_and_vis(dut):
     MAE_cos = np.mean(np.abs(cosines - cosines_true))
     dut._log.info(f"MAE for angle sweep: for sin = {MAE_sin:.5f}, for cos = {MAE_cos:.5f}")
     
+    
+    # Make plots for visualization
+    outdir = os.environ.get("CORDIC_PLOTS_DIR", "artifacts/cordic")
+    os.makedirs(outdir, exist_ok=True)
+    
     plt.figure(figsize=(12, 5))
     plt.subplot(1, 2, 1)
     plt.title(f"Sine Sweep : MAE = {MAE_sin:.5f}")
@@ -146,7 +155,7 @@ async def test_trigonometric_sweep_and_vis(dut):
     plt.subplot(1, 2, 2)
     plt.plot(linspace, sines_true - sines, label='residue (true - predicted)', color='red')
     plt.legend()
-    plt.savefig("sine.png")
+    plt.savefig(os.path.join(outdir, "sine.png"),  dpi=180, bbox_inches="tight")
     plt.close()
 
 
@@ -160,9 +169,17 @@ async def test_trigonometric_sweep_and_vis(dut):
     plt.subplot(1, 2, 2)
     plt.plot(linspace, cosines_true - cosines, label='residue (true - predicted)', color='red')
     plt.legend()
-    plt.savefig("cosine.png")
+    plt.savefig(os.path.join(outdir, "cosine.png"), dpi=180, bbox_inches="tight")
     plt.close()
     
+    # (optional) also stash numeric data for later:
+    np.savetxt(os.path.join(outdir, "sine_vs_true.csv"),
+            np.c_[linspace, sines_true, sines],
+            delimiter=",", header="deg,true_sin,cordic_sin", comments="")
+    np.savetxt(os.path.join(outdir, "cosine_vs_true.csv"),
+            np.c_[linspace, cosines_true, cosines],
+            delimiter=",", header="deg,true_cos,cordic_cos", comments="")
+        
     assert MAE_cos < 0.01, "Mean absolute error for cosine should be less then 0.01"
     assert MAE_sin < 0.01, "Mean absolute error for sine should be less then 0.01"
 
