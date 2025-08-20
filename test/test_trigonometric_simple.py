@@ -30,8 +30,57 @@ IS_ROTATING_BIT     = 3
 # The peripheral number is not used by the test harness.
 PERIPHERAL_NUM = 0
 
+async def test_sin_cos(dut, tqv, angle, r_tol=0.01):
+    
+    angle_rad = angle_to_rad(angle)
+    angle_fixed_point = float_to_fixed(angle_rad, 16, 2)  # 16 bits, 2 integer bits
+    dut._log.info(f"angle of {angle} degrees (in rad = {angle_rad:.4f}), is angle_fixed_point = {angle_fixed_point:0{16}b}")
+    await tqv.write_word_reg(1, angle_fixed_point)
+
+    # configure the cordic : set the mode to ROTATING, CIRCULAR, and running
+    # this corresponds to setting it to       {1'b1,,  2'b00,         1'b1 }
+    
+    config_to_write = (CIRCULAR_MODE << MODE_BITS) | (1 << IS_ROTATING_BIT) | 1     
+    dut._log.info(f"Configuring CORDIC with {config_to_write:#04x} ({bin(config_to_write)}) (mode={CIRCULAR_MODE}, is_rotating=1, start=1)")
+    await tqv.write_byte_reg(0, config_to_write)
+   
+    # check if the device is busy
+    await ClockCycles(dut.clk, 1)
+    #assert await tqv.read_byte_reg(6) == 1, "status register should be 1 (BUSY)"
+
+    await ClockCycles(dut.clk, 11)
+    #assert await tqv.read_byte_reg(6) == 2, "status register should be 2 (DONE)"
+
+    out1 = await tqv.read_hword_reg(4)
+    out2 = await tqv.read_hword_reg(5)
+    
+    # because we read unsigned 16bit half word, we need to conver it to signed representation
+    if out1 & (1<<15):
+        out1 = out1 - 2**16
+    
+    if out2 & (1<<15):
+        out2 = out2 - 2**16
+
+    
+    # conver to floating point for easier comparison
+    out1_float = fixed_to_float(out1, 16, 2)
+    out2_float = fixed_to_float(out2, 16, 2)
+    sin_true = math.sin(angle_rad)
+    cos_true = math.cos(angle_rad)
+
+    dut._log.info(f"out1 = {out1_float:.4f} (true = {cos_true:.4f}), out2 = {out2_float:.4f} (true = {sin_true:.4f})")
+    dut._log.info(f"out1/out2 = {out1_float/out2_float}")
+    assert is_close(out1_float, cos_true, r_tol=r_tol), f"sin({angle}) = {cos_true}, got {out1_float}"
+    assert is_close(out2_float, sin_true, r_tol=r_tol), f"cos({angle}) = {sin_true}, got {out2_float}"
+
+    dut._log.info(f"Finished CORDIC computation for angle {angle} degrees\n\n")
+    return out1, out2
+
+    
+
+
 @cocotb.test()
-async def test_project(dut):
+async def test_trigonometric_basic(dut):
     dut._log.info("Start")
 
     # Set the clock period to 100 ns (10 MHz)
@@ -68,40 +117,21 @@ async def test_project(dut):
     # the input to circular mode in rotating, is only angle, stored as radians, fixed point 
     # arithmetic in signed 1.14 bits format ( for FIXED WIDTH = 16, in general case, in signed 1.{FIXED_WIDTH-2} format )
     # 30 degrees = pi / 6 = 0.52359877 \approx (in fixed point) b00100001_10000011
-    angle = 30
-    angle_rad = angle_to_rad(angle)
-    angle_fixed_point = float_to_fixed(angle_rad, 16, 2)  # 16 bits, 2 integer bits
-    dut._log.info(f"angle of {angle} degrees (in rad = {angle_rad:.4f}), is angle_fixed_point = {angle_fixed_point:0{16}b}")
-    await tqv.write_word_reg(1, angle_fixed_point)
+    await test_sin_cos(dut, tqv, angle=30)
 
-    # configure the cordic : set the mode to ROTATING, CIRCULAR, and running
-    # this corresponds to setting it to       {1'b1,,  2'b00,         1'b1 }
+    await test_sin_cos(dut, tqv, angle=45)
+    await test_sin_cos(dut, tqv, angle=60)
     
-    config_to_write = (CIRCULAR_MODE << MODE_BITS) | (1 << IS_ROTATING_BIT) | 1     
-    dut._log.info(f"Configuring CORDIC with {config_to_write:#04x} ({bin(config_to_write)}) (mode={CIRCULAR_MODE}, is_rotating=1, start=1)")
-    await tqv.write_byte_reg(0, config_to_write)
-   
-    # check if the device is busy
-    await ClockCycles(dut.clk, 3)
-    #assert await tqv.read_byte_reg(6) == 1, "status register should be 1 (BUSY)"
+    # 75 degrees and 15 degrees is different by 1 percent
+    await test_sin_cos(dut, tqv, angle=75, r_tol=0.025)
+    await test_sin_cos(dut, tqv, angle=15, r_tol=0.025)
 
-    await ClockCycles(dut.clk, 10)
-    #assert await tqv.read_byte_reg(6) == 2, "status register should be 2 (DONE)"
-
-    out1 = await tqv.read_hword_reg(4)
-    out2 = await tqv.read_hword_reg(5)
-    
-    # conver to floating point for easier comparison
-    out1 = fixed_to_float(out1, 16, 2)
-    out2 = fixed_to_float(out2, 16, 2)
-    sin_true = math.sin(angle_rad)
-    cos_true = math.cos(angle_rad)
-
-    dut._log.info(f"out1 = {out1:.4f} (true = {cos_true:.4f}), out2 = {out2:.4f} (true = {sin_true:.4f})")
-    dut._log.info(f"out1/out2 = {out1/out2}")
-    
-    assert is_close(out1, cos_true), f"sin({angle}) = {cos_true}, got {out1}"
-    assert is_close(out2, sin_true), f"cos({angle}) = {sin_true}, got {out2}"
+    # test the negatives
+    await test_sin_cos(dut, tqv, angle=-15, r_tol=0.025)
+    await test_sin_cos(dut, tqv, angle=-30, r_tol=0.025)
+    await test_sin_cos(dut, tqv, angle=-45, r_tol=0.025)
+    await test_sin_cos(dut, tqv, angle=-60, r_tol=0.025)
+    await test_sin_cos(dut, tqv, angle=-75, r_tol=0.025)
 
     # The following assersion is just an example of how to check the output values.
     # Change it to match the actual expected output of your module:

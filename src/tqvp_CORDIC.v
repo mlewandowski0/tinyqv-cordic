@@ -9,7 +9,7 @@
 // For example tqvp_yourname_spi for an SPI peripheral.
 // Then edit tt_wrapper.v line 41 and change tqvp_example to your chosen module name.
 module tqvp_CORDIC
-    #(parameter ITERATIONS=10,
+    #(parameter ITERATIONS=12,
       parameter FIXED_WIDTH=16)
      (
     input         clk,          // Clock - the TinyQV project clock is normally set to 64MHz.
