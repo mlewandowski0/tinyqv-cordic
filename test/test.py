@@ -6,8 +6,15 @@ from cocotb.clock import Clock
 from cocotb.triggers import ClockCycles
 
 from tqv import TinyQV
+from fixed_point import *
+import math 
+
+def angle_to_rad(angle):
+    return angle * math.pi / 180.
 
 
+def is_close(pred, true, r_tol = 1e-2):
+    return abs(pred - true) / true < r_tol
 
 # BITS for mode
 MODE_BITS           = 1
@@ -61,10 +68,14 @@ async def test_project(dut):
     # the input to circular mode in rotating, is only angle, stored as radians, fixed point 
     # arithmetic in signed 1.14 bits format ( for FIXED WIDTH = 16, in general case, in signed 1.{FIXED_WIDTH-2} format )
     # 30 degrees = pi / 6 = 0.52359877 \approx (in fixed point) b00100001_10000011
-    await tqv.write_word_reg(1, 0b00100001_10000011)
- 
-    # configure the cordic : set the mode to CIRCULAR, ROTATING, and running 
-    # this corresponds to setting it to       {2'b00,   1'b1,         1'b1 }
+    angle = 30
+    angle_rad = angle_to_rad(angle)
+    angle_fixed_point = float_to_fixed(angle_rad, 16, 2)  # 16 bits, 2 integer bits
+    dut._log.info(f"angle of {angle} degrees (in rad = {angle_rad:.4f}), is angle_fixed_point = {angle_fixed_point:0{16}b}")
+    await tqv.write_word_reg(1, angle_fixed_point)
+
+    # configure the cordic : set the mode to ROTATING, CIRCULAR, and running
+    # this corresponds to setting it to       {1'b1,,  2'b00,         1'b1 }
     
     config_to_write = (CIRCULAR_MODE << MODE_BITS) | (1 << IS_ROTATING_BIT) | 1     
     dut._log.info(f"Configuring CORDIC with {config_to_write:#04x} ({bin(config_to_write)}) (mode={CIRCULAR_MODE}, is_rotating=1, start=1)")
@@ -79,8 +90,18 @@ async def test_project(dut):
 
     out1 = await tqv.read_hword_reg(4)
     out2 = await tqv.read_hword_reg(5)
-    dut._log.info(f"out1 = {out1}, out2 = {out2}")
+    
+    # conver to floating point for easier comparison
+    out1 = fixed_to_float(out1, 16, 2)
+    out2 = fixed_to_float(out2, 16, 2)
+    sin_true = math.sin(angle_rad)
+    cos_true = math.cos(angle_rad)
+
+    dut._log.info(f"out1 = {out1:.4f} (true = {cos_true:.4f}), out2 = {out2:.4f} (true = {sin_true:.4f})")
     dut._log.info(f"out1/out2 = {out1/out2}")
+    
+    assert is_close(out1, cos_true), f"sin({angle}) = {cos_true}, got {out1}"
+    assert is_close(out2, sin_true), f"cos({angle}) = {sin_true}, got {out2}"
 
     # The following assersion is just an example of how to check the output values.
     # Change it to match the actual expected output of your module:

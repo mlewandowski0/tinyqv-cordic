@@ -93,7 +93,7 @@ module CORDIC #(
         if (!rst_n) 
         begin
             running <= 1'b0;
-            iteration <= 8'd0;
+            iteration <= 0;
             x <= '0;
             y <= '0;
             z <= '0;
@@ -110,7 +110,7 @@ module CORDIC #(
             if (start && !running)
             begin 
                 running <= 1'b1;
-                iteration <= 8'd1;
+                iteration <= 1;
 
                 // initialize per mode + rotation/vector mode
 
@@ -173,7 +173,7 @@ module CORDIC #(
             begin
                     running <= 1'b0;
                     done    <= 1'b1;
-                    iteration <= 1'b0;
+                    iteration <= 0;
                     case (mode)
                         `CIRCULAR_MODE: begin
                             if (is_rotating) begin
