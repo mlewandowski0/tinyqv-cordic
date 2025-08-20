@@ -157,5 +157,8 @@ module tqvp_CORDIC
     // data_read_n is unused as none of our behaviour depends on whether
     // registers are being read.
     wire _unused = &{data_read_n, 1'b0};
-
+    wire _unused2 = &{ui_in, 1'b0}; // ui_in is unused as we don't use the PMOD inputs in this example
+    
+    // or show something useful, e.g. status bits:
+    assign uo_out = {6'b0, status_reg};
 endmodule

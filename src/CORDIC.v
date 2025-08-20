@@ -58,11 +58,10 @@ module CORDIC #(
     // atan lookup table
     wire signed [FIXED_WIDTH-1:0] delta_theta;
     CORDIC_angles_ROM #(.FIXED_WIDTH(FIXED_WIDTH),
-                               .ITERATIONS(ITERATIONS)) angles_rom(
-        .clk(clk),
-        .which_angle(sh),
-        .angle_out(delta_theta)
-    );
+                               .ITERATIONS(ITERATIONS)) angles_rom(.clk(clk),
+                                                                   .rst_n(rst_n),
+                                                                   .which_angle(sh),
+                                                                   .angle_out(delta_theta));
 
 
     wire signed [FIXED_WIDTH-1:0] delta_z;
