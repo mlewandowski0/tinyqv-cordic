@@ -142,8 +142,8 @@ module tqvp_CORDIC
     // Address 4 reads ui_in
     // All other addresses read 0.
     assign data_out = (address == 6'h0) ? 32'hbadcaffe :
-                      (address == 6'h4) ?  out1 :
-                      (address == 6'h5) ?  out2 :
+                      (address == 6'h4) ?  { {(32-FIXED_WIDTH){1'b0}}, out1} :
+                      (address == 6'h5) ?  { {(32-FIXED_WIDTH){1'b0}}, out2} :
                       (address == 6'h6) ? {30'b0, status_reg} :
                       32'h0;
 

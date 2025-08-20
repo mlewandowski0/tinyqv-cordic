@@ -10,13 +10,13 @@ from tqv import TinyQV
 
 
 # BITS for mode
-MODE_BITS           = 2
+MODE_BITS           = 1
 CIRCULAR_MODE       = 0
 LINEAR_MODE         = 1
 HYPERBOLIC_MODE     = 2
 
 # 
-IS_ROTATING_BIT     = 1 
+IS_ROTATING_BIT     = 3 
 
 # When submitting your design, change this to the peripheral number
 # in peripherals.v.  e.g. if your design is i_user_peri05, set this to 5.
@@ -61,13 +61,13 @@ async def test_project(dut):
     # the input to circular mode in rotating, is only angle, stored as radians, fixed point 
     # arithmetic in signed 1.14 bits format ( for FIXED WIDTH = 16, in general case, in signed 1.{FIXED_WIDTH-2} format )
     # 30 degrees = pi / 6 = 0.52359877 \approx (in fixed point) b00100001_10000011
-    await tqv.write_word_reg(1, 0b0)
+    await tqv.write_word_reg(1, 0b00100001_10000011)
  
     # configure the cordic : set the mode to CIRCULAR, ROTATING, and running 
     # this corresponds to setting it to       {2'b00,   1'b1,         1'b1 }
     
     config_to_write = (CIRCULAR_MODE << MODE_BITS) | (1 << IS_ROTATING_BIT) | 1     
-    dut._log.info(f"Configuring CORDIC with {config_to_write:#04x} (mode={CIRCULAR_MODE}, is_rotating=1, start=1)")
+    dut._log.info(f"Configuring CORDIC with {config_to_write:#04x} ({bin(config_to_write)}) (mode={CIRCULAR_MODE}, is_rotating=1, start=1)")
     await tqv.write_byte_reg(0, config_to_write)
    
     # check if the device is busy
@@ -80,6 +80,7 @@ async def test_project(dut):
     out1 = await tqv.read_hword_reg(4)
     out2 = await tqv.read_hword_reg(5)
     dut._log.info(f"out1 = {out1}, out2 = {out2}")
+    dut._log.info(f"out1/out2 = {out1/out2}")
 
     # The following assersion is just an example of how to check the output values.
     # Change it to match the actual expected output of your module:
