@@ -14,17 +14,10 @@ from pathlib import Path
 import os
 import matplotlib
 import matplotlib.pyplot as plt
+
+from test_utils import test_sin_cos
+
 matplotlib.use("Agg")  # headless backend
-
-def angle_to_rad(angle):
-    return angle * math.pi / 180.
-
-
-def is_close(pred, true, r_tol = 1e-2):
-    return abs(pred - true) / true < r_tol
-
-def is_close_atol(pred, true, a_tol = 1e-2):
-    return abs(pred - true)  < a_tol
 
 
 # BITS for mode
@@ -41,49 +34,6 @@ IS_ROTATING_BIT     = 3
 # The peripheral number is not used by the test harness.
 PERIPHERAL_NUM = 0
 
-async def test_sin_cos_atol(dut, tqv, angle, tol=0.01):
-    
-    angle_rad = angle_to_rad(angle)
-    angle_fixed_point = float_to_fixed(angle_rad, 16, 2)  # 16 bits, 2 integer bits
-    await tqv.write_word_reg(1, angle_fixed_point)
-
-    # configure the cordic : set the mode to ROTATING, CIRCULAR, and running
-    # this corresponds to setting it to       {1'b1,,  2'b00,         1'b1 }
-    
-    config_to_write = (CIRCULAR_MODE << MODE_BITS) | (1 << IS_ROTATING_BIT) | 1     
-    await tqv.write_byte_reg(0, config_to_write)
-   
-    # check if the device is busy
-    await ClockCycles(dut.clk, 1)
-    #assert await tqv.read_byte_reg(6) == 1, "status register should be 1 (BUSY)"
-
-    await ClockCycles(dut.clk, 11)
-    #assert await tqv.read_byte_reg(6) == 2, "status register should be 2 (DONE)"
-
-    out1 = await tqv.read_hword_reg(4)
-    out2 = await tqv.read_hword_reg(5)
-    
-    # because we read unsigned 16bit half word, we need to conver it to signed representation
-    if out1 & (1<<15):
-        out1 = out1 - 2**16
-    
-    if out2 & (1<<15):
-        out2 = out2 - 2**16
-
-    
-    # conver to floating point for easier comparison
-    out1_float = fixed_to_float(out1, 16, 2)
-    out2_float = fixed_to_float(out2, 16, 2)
-        
-    sin_true = math.sin(angle_rad)
-    cos_true = math.cos(angle_rad)
-
-    assert is_close_atol(out1_float, cos_true, a_tol=tol), f"sin({angle}) = {cos_true}, got {out1_float}"
-    assert is_close_atol(out2_float, sin_true, a_tol=tol), f"cos({angle}) = {sin_true}, got {out2_float}"
-
-    return out1, out2
-
-    
 
 
 @cocotb.test()
@@ -126,13 +76,13 @@ async def test_trigonometric_sweep_and_vis(dut):
     # 30 degrees = pi / 6 = 0.52359877 \approx (in fixed point) b00100001_10000011
     sines, cosines = [], []
 
-    linspace = np.linspace(-90, 90, 100)
+    linspace = np.linspace(-90, 90, 180)
     sines_true = np.sin(linspace * np.pi / 180.)
     cosines_true = np.cos(linspace * np.pi / 180.)
 
 
     for angle in linspace:
-        out1, out2 = await test_sin_cos_atol(dut, tqv, angle=angle, tol=0.025)
+        out1, out2 = await test_sin_cos(dut, tqv, angle=angle, tol_mode="abs", tol=0.025)
         cosines.append(fixed_to_float(out1, 16, 2))
         sines.append(fixed_to_float(out2, 16, 2))  # sin is in out2
 
