@@ -40,7 +40,7 @@ VERILOG_SOURCES += $(PWD)/tb.v
 TOPLEVEL = tb
 
 # MODULE is the basename of the Python test file
-MODULE = test_trigonometric_simple,test_trigonometric_sweep_and_vis,test_linear_simple
+MODULE = test_linear_simple,test_trigonometric_simple,test_trigonometric_sweep_and_vis
 
 # include cocotb's make rules to take care of the simulator setup
 include $(shell cocotb-config --makefiles)/Makefile.sim
