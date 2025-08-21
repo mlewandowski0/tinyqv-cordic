@@ -57,23 +57,27 @@ module CORDIC #(
 
     // atan lookup table
     wire signed [FIXED_WIDTH-1:0] delta_theta;
-    CORDIC_angles_ROM #(.FIXED_WIDTH(FIXED_WIDTH),
-                               .ITERATIONS(ITERATIONS)) angles_rom(.clk(clk),
-                                                                   .rst_n(rst_n),
-                                                                   .which_angle(sh),
-                                                                   .angle_out(delta_theta));
+    CORDIC_angles_ROM_comb #(.FIXED_WIDTH(FIXED_WIDTH),
+                               .ITERATIONS(ITERATIONS)) angles_rom(.which_angle(sh),
+                                                                    .angle_out(delta_theta));
+
+    //    CORDIC_angles_ROM_comb #(.FIXED_WIDTH(FIXED_WIDTH),
+    //                           .ITERATIONS(ITERATIONS)) angles_rom(.which_angle(sh),
+    //                                                               .angle_out(delta_theta));
+
+
 
 
     wire signed [FIXED_WIDTH-1:0] delta_z;
     assign delta_z = (mode == `CIRCULAR_MODE) ? delta_theta : 
-                  (mode == `LINEAR_MODE) ? (alpha_one_value >> (iteration-1)) :
+                  (mode == `LINEAR_MODE) ? (alpha_one_value >> (iteration)) :
                   (mode == `HYPERBOLIC_MODE) ? 1 : 0;
 
     CORDIC_iteration #(.FIXED_WIDTH(FIXED_WIDTH),
                        .ITERATIONS(ITERATIONS)) iter( .x(x),
                                                       .y(y),
                                                       .z(z),
-                                                      .shift(sh-1),
+                                                      .shift(sh),
                                                       .delta_z(delta_z),
 
                                                       .is_sigma_positive(is_sigma_positive),
@@ -89,11 +93,12 @@ module CORDIC #(
     // 1-cycle done pulse
     wire last_iter = (iteration == (ITERATIONS-1));
 
-    always @(posedge clk) begin
+    always @(posedge clk) 
+    begin
         if (!rst_n) 
         begin
             running <= 1'b0;
-            iteration <= 0;
+            iteration <= 8'd0;
             x <= '0;
             y <= '0;
             z <= '0;
@@ -110,7 +115,7 @@ module CORDIC #(
             if (start && !running)
             begin 
                 running <= 1'b1;
-                iteration <= 1;
+                iteration <= 8'd0;
 
                 // initialize per mode + rotation/vector mode
 
@@ -169,34 +174,38 @@ module CORDIC #(
                 y <= next_y;
                 z <= next_z;
 
-            if (last_iter) 
-            begin
+                if (last_iter) 
+                begin
                     running <= 1'b0;
                     done    <= 1'b1;
-                    iteration <= 0;
+                    iteration <= 1'b0;
                     case (mode)
-                        `CIRCULAR_MODE: begin
-                            if (is_rotating) begin
-                                out1 <= x; // cos
-                                out2 <= y; // sin
+                        `CIRCULAR_MODE: 
+                        begin
+                            if (is_rotating) 
+                            begin
+                                out1 <= next_x; // cos
+                                out2 <= next_y; // sin
                             end else begin
-                                out1 <= x; // r ≈ K*sqrt(A^2+B^2)
-                                out2 <= z; // atan2(B,A)
+                                out1 <= next_x; // r ≈ K*sqrt(A^2+B^2)
+                                out2 <= next_z; // atan2(B,A)
                             end
                         end
-                        `LINEAR_MODE: begin
+                        `LINEAR_MODE: 
+                        begin
                             if (is_rotating)
                             begin
-                                out1 <= y;  // A * B 
-                                out2 <= z;  // ~ error
+                                out1 <= next_y;  // A * B 
+                                out2 <= next_z;  // ~ error
                             end
                             else 
                             begin
-                                out1 <= z;  // B / A
-                                out2 <= y;  // ~ error
-                            end
+                                out1 <= next_z;  // B / A
+                                out2 <= next_y;  // ~ error
+                             end
                         end
-                        default: begin
+                        default: 
+                        begin
                             out1 <= '0; out2 <= '0;
                         end
                     endcase
