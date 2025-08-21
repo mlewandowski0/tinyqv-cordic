@@ -33,7 +33,7 @@ module tqvp_CORDIC
 
     output        user_interrupt  // Dedicated interrupt request for this peripheral
 );
-    // register 0 : {mode, is_rotating, start}
+    // register 0 : {is_rotating, mode, start}
     // register 1 : A
     // register 2 : B
     // register 3 : {shift}
