@@ -30,7 +30,13 @@ module CORDIC #(
     output reg done                                         // 1-cycle pulse on finish, pluggable to interrupt ? 
 );
 
-    localparam ITERATION_WIDTH = $clog2(ITERATIONS)-1;
+    localparam ITER_W = $clog2(ITERATIONS);
+    localparam signed [FIXED_WIDTH-1:0] K_INV_Q = 16'sd9949; // ≈0.607254
+
+    // iteration counter
+    reg [ITER_W-1:0] iteration;
+    wire last_iter = (iteration == (ITERATIONS-1));
+    
 
     // internal path
     reg signed [FIXED_WIDTH-1:0] x;
@@ -41,37 +47,39 @@ module CORDIC #(
     wire signed [FIXED_WIDTH-1:0] next_y;
     wire signed [FIXED_WIDTH-1:0] next_z;
 
-    // iteration counter
-    reg [ITERATION_WIDTH:0] iteration;
-
-    // shift amount clamped
-    wire [ITERATION_WIDTH:0] sh = (iteration > (FIXED_WIDTH-1)) ? (FIXED_WIDTH-1) : iteration;
+    // clamp shift to width - 1
+    wire [ITER_W-1:0] sh_u = iteration;
+    wire[ ITER_W-1:0] sh = (sh_u > (FIXED_WIDTH-1)) ? (FIXED_WIDTH-1) : sh_u;
 
     // determining the sigma sign
-    wire is_sigma_positive = (is_rotating) ? (z >= 0) : (y < 0); // rotate : sign(z); vector : -sign(y)
+    wire is_sigma_positive = (is_rotating) ? ~z[FIXED_WIDTH-1] : y[FIXED_WIDTH-1]; // rotate : sign(z); vector : -sign(y)
 
-    wire signed [FIXED_WIDTH-1:0] alpha_one_value = 1 << alpha_one_left_shift;
+    // sized '1' for linear mode base
+    wire signed [FIXED_WIDTH-1:0] one_q = ({{(FIXED_WIDTH-1){1'b0}},1'b1}) <<< alpha_one_left_shift;
 
-    // needs updating for smaller iterations
-    localparam signed [FIXED_WIDTH-1:0] K_INV_Q = 16'sd9949; // ≈0.607254
 
-    // atan lookup table
+    // Single-shifter linear delta: if sh <= alpha_left, shift left by (alpha_left - sh), else 0.
+    wire sh_le_alpha = (sh <= alpha_one_left_shift);
+    wire [$clog2(FIXED_WIDTH)-1:0] diff = alpha_one_left_shift - sh[$clog2(FIXED_WIDTH)-1:0];
+    wire signed [FIXED_WIDTH-1:0] alpha_linear = sh_le_alpha ? ({{(FIXED_WIDTH-1){1'b0}},1'b1} <<< diff) : '0;
+
+    // ---- circular angles (combinational ROM)
     wire signed [FIXED_WIDTH-1:0] delta_theta;
+
+
     CORDIC_angles_ROM_comb #(.FIXED_WIDTH(FIXED_WIDTH),
                                .ITERATIONS(ITERATIONS)) angles_rom(.which_angle(sh),
                                                                     .angle_out(delta_theta));
 
-    //    CORDIC_angles_ROM_comb #(.FIXED_WIDTH(FIXED_WIDTH),
-    //                           .ITERATIONS(ITERATIONS)) angles_rom(.which_angle(sh),
-    //                                                               .angle_out(delta_theta));
-
-
-
-
-    wire signed [FIXED_WIDTH-1:0] delta_z;
-    assign delta_z = (mode == `CIRCULAR_MODE) ? delta_theta : 
-                  (mode == `LINEAR_MODE) ? (alpha_one_value >> (iteration)) :
-                  (mode == `HYPERBOLIC_MODE) ? 1 : 0;
+    reg signed [FIXED_WIDTH-1:0] delta_z;    
+    always @(*)
+    begin
+        case (mode)
+            `CIRCULAR_MODE: delta_z = delta_theta;
+            `LINEAR_MODE: delta_z = (is_rotating) ? (one_q * y) : (one_q * x);
+            default:          delta_z = {{(FIXED_WIDTH-1){1'b0}},1'b1}; // placeholder for hyperbolic            
+        endcase
+    end
 
     CORDIC_iteration #(.FIXED_WIDTH(FIXED_WIDTH),
                        .ITERATIONS(ITERATIONS)) iter( .x(x),
@@ -89,9 +97,6 @@ module CORDIC #(
 
     // running flag
     reg running;
-
-    // 1-cycle done pulse
-    wire last_iter = (iteration == (ITERATIONS-1));
 
     always @(posedge clk) 
     begin
