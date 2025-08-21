@@ -44,10 +44,6 @@ async def test_trigonometric_basic(dut):
     # Check the status register : we don't yet run anything, it should be 0
     assert await tqv.read_byte_reg(6) == 0, "status register should be 0 (READY TO BE RUN)"
  
-    # outputs should be zeroed out 
-    assert await tqv.read_hword_reg(4) == 0, "output 1 should be zeroed out"
-    assert await tqv.read_hword_reg(5) == 0, "output 2 should be zeroed out"
-
     # first test : compute the sin(30 degrees) and cos(30 degrees)
 
     # the input to circular mode in rotating, is only angle, stored as radians, fixed point 

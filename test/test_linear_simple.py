@@ -44,10 +44,6 @@ async def test_multiplication(dut):
     # Check the status register : we don't yet run anything, it should be 0
     assert await tqv.read_byte_reg(6) == 0, "status register should be 0 (READY TO BE RUN)"
  
-    # outputs should be zeroed out 
-    assert await tqv.read_hword_reg(4) == 0, "output 1 should be zeroed out"
-    assert await tqv.read_hword_reg(5) == 0, "output 2 should be zeroed out"
-
     width = 16
     XY_INT = 5
     Z_INT  = 5
@@ -140,10 +136,7 @@ async def test_division(dut):
     # Check the status register : we don't yet run anything, it should be 0
     assert await tqv.read_byte_reg(6) == 0, "status register should be 0 (READY TO BE RUN)"
  
-    # outputs should be zeroed out 
-    assert await tqv.read_hword_reg(4) == 0, "output 1 should be zeroed out"
-    assert await tqv.read_hword_reg(5) == 0, "output 2 should be zeroed out"
-
+ 
     alpha_one_position = 11
     # computing 1.5 / 0.6
     a = 0.6

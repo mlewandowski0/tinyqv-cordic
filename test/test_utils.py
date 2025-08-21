@@ -124,6 +124,7 @@ async def use_multiplication_mode_input_float(dut, tqv, a, b, alpha_one_position
     dut._log.info(f"out1 = {out1}, out2 = {out2}")
     dut._log.info(f"fixed_to_float(out1) = {fixed_to_float(out1, width, XY_INT)}, fixed_to_float(out2) = {fixed_to_float(out2, width, Z_INT)}")
     dut._log.info(f"true value = {a * b} (float)")
+    dut._log.info(f"\n")
 
     return out1, out2
 
@@ -167,5 +168,6 @@ async def use_division_mode_float_input(dut, tqv, a, b, alpha_one_position, tol_
     dut._log.info(f"out1 = {out1}, out2 = {out2}")
     dut._log.info(f"fixed_to_float(out1) = {fixed_to_float(out1, width, XY_INT)}, fixed_to_float(out2) = {fixed_to_float(out2, width, Z_INT)}")
     dut._log.info(f"true value = {b / a} (float)")
+    dut._log.info(f"\n")
 
     return out1, out2

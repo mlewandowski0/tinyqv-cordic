@@ -11,11 +11,11 @@ module CORDIC #(
     input       [1:0]               mode,                   // `CIRCULAR_MODE / `LINEAR_MODE / `HYPERBOLIC_MODE
     input       [$clog2(FIXED_WIDTH)-1:0] alpha_one_left_shift,
 
-    input  [FIXED_WIDTH-1:0]        A,
-    input  [FIXED_WIDTH-1:0]        B,
-    output reg [FIXED_WIDTH-1:0]    out1,
-    output reg [FIXED_WIDTH-1:0]    out2,
-    output reg                      done
+    input  [FIXED_WIDTH-1:0]            A,
+    input  [FIXED_WIDTH-1:0]            B,
+    output reg [FIXED_WIDTH-1:0]        out1,
+    output reg [FIXED_WIDTH-1:0]        out2,
+    output reg                          done
 );
 
     // ---------------- helpers ----------------
@@ -109,11 +109,59 @@ module CORDIC #(
     wire [K_W-1:0] msb_y = msb_index(abs_tc($signed(B)));
     wire [K_W-1:0] msb_x = msb_index(abs_tc($signed(A)));
 
-    wire [K_W-1:0] k_mul = (msb_z > (alpha_one_left_shift + 1)) ? (msb_z - (alpha_one_left_shift + 1)) : {K_W{1'b0}};
+    wire [K_W-1:0] k_mul = (msb_z >= (alpha_one_left_shift + 1)) ? (msb_z - alpha_one_left_shift) : {K_W{1'b0}};
     wire [K_W-1:0] k_div = (msb_y > msb_x) ? (msb_y - msb_x) : {K_W{1'b0}};
 
     wire [K_W-1:0] k_comb =
         (mode == `LINEAR_MODE) ? (is_rotating ? k_mul : k_div) : {K_W{1'b0}};
+
+    // set the outputs based on the mode
+    always @(*)
+    begin
+        // default values to avoid latches
+        out1 = 0;
+        out2 = 0;
+
+        case (mode)
+            `CIRCULAR_MODE:
+            begin
+                if (rot_latched)
+                begin
+                    out1 = x; // cos
+                    out2 = y; // sin
+                end 
+                else 
+                begin
+                    out1 = x; // r 
+                    out2 = z; // angle
+                end
+            end
+            `LINEAR_MODE:
+            begin
+               if (rot_latched) begin
+                    // product = y << k
+                    out1 = $signed(y) <<< k_lat;
+                    out2 = z; // residual
+                end 
+                else 
+                begin
+                    // quotient = z << k
+                    out1 = $signed(z) <<< k_lat;
+                    out2 = y; // residual
+                end                
+            end
+            `HYPERBOLIC_MODE:
+            begin
+                out1 = 0;
+                out2 = 0;
+            end
+            default:
+            begin
+                out1 = 0;
+                out2 = 0;
+            end 
+        endcase
+    end
 
     // ---------------- FSM ----------------
     always @(posedge clk) begin
@@ -123,7 +171,6 @@ module CORDIC #(
             mode_latched <= 2'b00;
             rot_latched  <= 1'b0;
             x <= '0; y <= '0; z <= '0;
-            out1 <= '0; out2 <= '0;
             done <= 1'b0;
             k_lat <= {K_W{1'b0}};
         end else begin
@@ -167,37 +214,15 @@ module CORDIC #(
                 // perform iteration
                 x <= next_x; y <= next_y; z <= next_z;
 
-                if (last_iter) begin
+                if (last_iter) 
+                begin
                     running <= 1'b0;
                     // post-scale once (barrel left shift) and finish
-                    case (mode_latched)
-                      `CIRCULAR_MODE: begin
-                          if (rot_latched) begin
-                              out1 <= next_x; out2 <= next_y; // cos,sin
-                          end else begin
-                              out1 <= next_x; out2 <= next_z; // r, angle
-                          end
-                          done <= 1'b1;
-                      end
+                    done <= 1'b1;
 
-                      `LINEAR_MODE: begin
-                          if (rot_latched) begin
-                              // product = y << k
-                              out1 <= $signed(next_y) <<< k_lat;
-                              out2 <= next_z; // residual
-                          end else begin
-                              // quotient = z << k
-                              out1 <= $signed(next_z) <<< k_lat;
-                              out2 <= next_y; // residual
-                          end
-                          done <= 1'b1;
-                      end
-
-                      default: begin
-                          out1 <= '0; out2 <= '0; done <= 1'b1;
-                      end
-                    endcase
-                end else begin
+                end 
+                else
+                begin
                     iteration <= iteration + 1'b1;
                 end
             end
