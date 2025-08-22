@@ -66,7 +66,18 @@ module CORDIC_iteration #(parameter FIXED_WIDTH = 16,
 
                 `HYPERBOLIC_MODE:
                 begin
-                    // TODO: 
+                    if (is_sigma_positive)
+                    begin
+                        next_x = x + y_s;
+                        next_y = y + x_s; 
+                        next_z = z - delta_z;
+                    end
+                    else 
+                    begin
+                        next_x = x - y_s;
+                        next_y = y - x_s;
+                        next_z = z + delta_z;
+                    end
                 end
 
                 default:

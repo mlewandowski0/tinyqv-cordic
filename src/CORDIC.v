@@ -4,18 +4,18 @@ module CORDIC #(
     parameter ITERATIONS  = 9,
     parameter FIXED_WIDTH = 16
 )(
-    input                           clk,
-    input                           rst_n,
-    input                           start,
-    input                           is_rotating,            // LINEAR: 1=multiply, 0=divide
-    input       [1:0]               mode,                   // `CIRCULAR_MODE / `LINEAR_MODE / `HYPERBOLIC_MODE
-    input       [$clog2(FIXED_WIDTH)-1:0] alpha_one_left_shift,
+    input                                   clk,
+    input                                   rst_n,
+    input                                   start,
+    input                                   is_rotating,            // LINEAR: 1=multiply, 0=divide
+    input [1:0]                             mode,                   // `CIRCULAR_MODE / `LINEAR_MODE / `HYPERBOLIC_MODE
+    input [$clog2(FIXED_WIDTH)-1:0]         alpha_one_left_shift,
 
-    input  [FIXED_WIDTH-1:0]            A,
-    input  [FIXED_WIDTH-1:0]            B,
-    output reg [FIXED_WIDTH-1:0]        out1,
-    output reg [FIXED_WIDTH-1:0]        out2,
-    output reg                          done
+    input [FIXED_WIDTH-1:0]                 A,
+    input [FIXED_WIDTH-1:0]                 B,
+    output reg [FIXED_WIDTH-1:0]            out1,
+    output reg [FIXED_WIDTH-1:0]            out2,
+    output reg                              done
 );
 
     // ---------------- helpers ----------------
@@ -62,22 +62,29 @@ module CORDIC #(
     wire [$clog2(FIXED_WIDTH)-1:0] diff = alpha_one_left_shift - sh[$clog2(FIXED_WIDTH)-1:0];
     wire signed [FIXED_WIDTH-1:0] alpha_linear = sh_le_alpha ? ({{(FIXED_WIDTH-1){1'b0}},1'b1} <<< diff) : '0;
 
-    // Combinational atan LUT (Q2.14)
-    wire signed [FIXED_WIDTH-1:0] delta_theta;
+    // Combinational atan LUT (signed Q2.14)
+    wire signed [FIXED_WIDTH-1:0] delta_theta_atan;
     CORDIC_angles_ROM_comb #(
         .FIXED_WIDTH(FIXED_WIDTH),
         .ITERATIONS (ITERATIONS)
     ) angles_rom (
         .which_angle(sh),
-        .angle_out  (delta_theta)
+        .angle_out  (delta_theta_atan)
     );
+
+    // combinational atanh LUT (signed Q3.13)
+    wire signed [FIXED_WIDTH-1:0] delta_theta_atanh;
+    CORDIC_atanh_ROM_comb #(.FIXED_WIDTH(FIXED_WIDTH),
+                            .ITERATIONS(ITERATIONS)) atanh_angles_rom(.which_angle(sh),
+                                                                      .angle_out(delta_theta_atanh));
 
     // delta_z select
     reg signed [FIXED_WIDTH-1:0] delta_z;
     always @* begin
         case (mode_latched)
-            `CIRCULAR_MODE:   delta_z = delta_theta;
+            `CIRCULAR_MODE:   delta_z = delta_theta_atan;
             `LINEAR_MODE:     delta_z = alpha_linear;
+            `HYPERBOLIC_MODE: delta_z = delta_theta_atanh;
             default:          delta_z = {{(FIXED_WIDTH-1){1'b0}},1'b1}; // placeholder for hyperbolic
         endcase
     end
@@ -98,6 +105,9 @@ module CORDIC #(
     // K^-1 for circular rotate (Q2.14)
     localparam signed [FIXED_WIDTH-1:0] K_INV_Q = 16'sd9949;
 
+    // K for hyperbolic rotation
+    localparam signed [FIXED_WIDTH-1:0] K_HYP = 16'b0010011010100100; // 1.20751953125
+
     // ---------------- single-cycle prescaler ----------------
     localparam integer K_W = $clog2(FIXED_WIDTH+1);
     reg  [K_W-1:0] k_lat;  // latched prescale for post-scaling
@@ -114,6 +124,11 @@ module CORDIC #(
 
     wire [K_W-1:0] k_comb =
         (mode == `LINEAR_MODE) ? (is_rotating ? k_mul : k_div) : {K_W{1'b0}};
+
+    // hyperbolic mode : does iteration needs repeating 
+    // hyperbolic mode requires repeition on i = 4, and i = 13 
+    wire repeat_signal = (mode == `HYPERBOLIC_MODE && ((iteration == 4) || (iteration == 13)));
+    reg skipped_already;
 
     // set the outputs based on the mode
     always @(*)
@@ -152,13 +167,13 @@ module CORDIC #(
             end
             `HYPERBOLIC_MODE:
             begin
-                out1 = 0;
-                out2 = 0;
+                out1 = x;
+                out2 = y;
             end
             default:
             begin
-                out1 = 0;
-                out2 = 0;
+                out1 = x;
+                out2 = z;
             end 
         endcase
     end
@@ -166,30 +181,37 @@ module CORDIC #(
     // ---------------- FSM ----------------
     always @(posedge clk) begin
         if (!rst_n) begin
-            running      <= 1'b0;
-            iteration    <= {ITER_W{1'b0}};
-            mode_latched <= 2'b00;
-            rot_latched  <= 1'b0;
-            x <= '0; y <= '0; z <= '0;
-            done <= 1'b0;
-            k_lat <= {K_W{1'b0}};
+            running          <= 1'b0;
+            iteration        <= {ITER_W{1'b0}};
+            mode_latched     <= 2'b00;
+            rot_latched      <= 1'b0;
+            x                <= '0; 
+            y                <= '0; 
+            z                <= '0;
+            done             <= 1'b0;
+            k_lat            <= {K_W{1'b0}};
+            skipped_already  <= 0;
         end else begin
-            done <= 1'b0;
+            done             <= 1'b0;
 
             if (start && !running) begin
-                mode_latched <= mode;
-                rot_latched  <= is_rotating;
-                k_lat        <= k_comb;       // latch k (constant-latency prescale)
-                iteration    <= {ITER_W{1'b0}};
-                running      <= 1'b1;
+                mode_latched    <= mode;
+                rot_latched     <= is_rotating;
+                k_lat           <= k_comb;       // latch k (constant-latency prescale)
+                iteration       <= {ITER_W{1'b0}};
+                running         <= 1'b1;
+                skipped_already <= 0;
 
                 case (mode)
                   `CIRCULAR_MODE: begin
                       if (is_rotating) begin
                           z <= $signed(A);
-                          x <= K_INV_Q; y <= '0;
+                          x <= K_INV_Q; 
+                          y <= '0;
                       end else begin
-                          x <= $signed(A); y <= $signed(B); z <= '0;
+                          x <= $signed(A); 
+                          y <= $signed(B); 
+                          z <= '0;
                       end
                   end
                   `LINEAR_MODE: begin
@@ -205,6 +227,21 @@ module CORDIC #(
                           z <= '0;
                       end
                   end
+                  `HYPERBOLIC_MODE: begin
+                    iteration <= 'd1;
+                    if (is_rotating)
+                    begin
+                        z <= $signed(A);
+                        x <= K_HYP;
+                        y <= 0;                        
+                    end
+                    else 
+                    begin
+                        x <= $signed(A);
+                        y <= $signed(B);
+                        z <= '0;
+                    end
+                  end
                   default: begin
                       x <= '0; y <= '0; z <= '0;
                   end
@@ -212,18 +249,34 @@ module CORDIC #(
 
             end else if (running) begin
                 // perform iteration
-                x <= next_x; y <= next_y; z <= next_z;
+                x <= next_x; 
+                y <= next_y;
+                z <= next_z;
 
                 if (last_iter) 
                 begin
                     running <= 1'b0;
                     // post-scale once (barrel left shift) and finish
                     done <= 1'b1;
+                    skipped_already <= 0;
 
                 end 
                 else
                 begin
-                    iteration <= iteration + 1'b1;
+                    if (skipped_already)
+                    begin
+                        skipped_already <= 0;
+                        iteration <= iteration + 1'b1;
+                    end
+                    
+                    else if (repeat_signal)
+                    begin
+                        iteration <= iteration;
+                        skipped_already <= 1;
+                    end
+
+                    else
+                        iteration <= iteration + 1'b1;
                 end
             end
         end
