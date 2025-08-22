@@ -14,18 +14,18 @@ module CORDIC_atanh_ROM_comb #(parameter FIXED_WIDTH = 16,
         begin 
             case(i)
                 'd0: atanh_lut     = 16'bxxxxxxxxxxxxxxx;   
-                'd1: atanh_lut     = 16'b0001000110010100;     // atanh(2^-1)
-                'd2: atanh_lut     = 16'b0000100000101100;     // atanh(2^-2)
-                'd3: atanh_lut     = 16'b0000010000000101;     // atanh(2^-3)
-                'd4: atanh_lut     = 16'b0000001000000001;     // atanh(2^-4)
-                'd5: atanh_lut     = 16'b0000000100000000;     // atanh(2^-5)
-                'd6: atanh_lut     = 16'b0000000010000000;     // atanh(2^-6)
-                'd7: atanh_lut     = 16'b0000000001000000;     // atanh(2^-7)
-                'd8: atanh_lut     = 16'b0000000000100000;     // atanh(2^-8)
-                'd9: atanh_lut     = 16'b0000000000010000;     // atanh(2^-9)
-                'd10: atanh_lut    = 16'b0000000000001000;     // atanh(2^-10)
-                'd11: atanh_lut    = 16'b0000000000000100;     // atanh(2^-11)
-                default: atanh_lut = 16'b0000000000000010;     // atanh(2^-12)
+                'd1: atanh_lut     = 16'b0010001100101000;     // atanh(2^-1)
+                'd2: atanh_lut     = 16'b0001000001011001;     // atanh(2^-2)
+                'd3: atanh_lut     = 16'b0000100000001011;     // atanh(2^-3)
+                'd4: atanh_lut     = 16'b0000010000000001;     // atanh(2^-4)
+                'd5: atanh_lut     = 16'b0000001000000000;     // atanh(2^-5)
+                'd6: atanh_lut     = 16'b0000000100000000;     // atanh(2^-6)
+                'd7: atanh_lut     = 16'b0000000010000000;     // atanh(2^-7)
+                'd8: atanh_lut     = 16'b0000000001000000;     // atanh(2^-8)
+                'd9: atanh_lut     = 16'b0000000000100000;     // atanh(2^-9)
+                'd10: atanh_lut    = 16'b0000000000010000;     // atanh(2^-10)
+                'd11: atanh_lut    = 16'b0000000000001000;     // atanh(2^-11)
+                default: atanh_lut = 16'b0000000000000100;     // atanh(2^-12)
             endcase 
         end 
     endfunction

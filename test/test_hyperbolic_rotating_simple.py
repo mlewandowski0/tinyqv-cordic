@@ -8,7 +8,8 @@ from cocotb.triggers import ClockCycles
 from tqv import TinyQV
 from fixed_point import *
 import math 
-from test_utils import test_sin_cos
+from test_utils import test_sinh_cosh
+import numpy as np 
 
 # When submitting your design, change this to the peripheral number
 # in peripherals.v.  e.g. if your design is i_user_peri05, set this to 5.
@@ -16,7 +17,7 @@ from test_utils import test_sin_cos
 PERIPHERAL_NUM = 0
 
 @cocotb.test()
-async def test_trigonometric_basic(dut):
+async def test_hyperbolic_basic(dut):
     dut._log.info("Start")
 
     # Set the clock period to 100 ns (10 MHz)
@@ -44,4 +45,26 @@ async def test_trigonometric_basic(dut):
     # Check the status register : we don't yet run anything, it should be 0
     assert await tqv.read_byte_reg(6) == 0, "status register should be 0 (READY TO BE RUN)"
  
-    # TODO: write testcase
+    # test few well known values
+    x = 0.0
+    out1, out2 = await test_sinh_cosh(dut, tqv, x=x, tol_mode="abs", tol=0.001)
+
+    # ln(2)
+    x = math.log(2)
+    out1, out2 = await test_sinh_cosh(dut, tqv, x=x, tol_mode="abs", tol=0.001)
+
+    # -ln(2)
+    x = -math.log(2)
+    out1, out2 = await test_sinh_cosh(dut, tqv, x=x, tol_mode="abs", tol=0.001)
+
+    x = 1.0
+    out1, out2 = await test_sinh_cosh(dut, tqv, x=x, tol_mode="abs", tol=0.001)
+
+    x = -1.0
+    out1, out2 = await test_sinh_cosh(dut, tqv, x=x, tol_mode="abs", tol=0.001)
+
+    x = math.log(3)
+    out1, out2 = await test_sinh_cosh(dut, tqv, x=x, tol_mode="abs", tol=0.001)
+
+    x = -math.log(3)
+    out1, out2 = await test_sinh_cosh(dut, tqv, x=x, tol_mode="abs", tol=0.001)

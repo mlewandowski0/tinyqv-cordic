@@ -21,7 +21,7 @@ module CORDIC_angles_ROM_comb #(
                 'd6:        atan_lut = 16'b0000000100000000; // atan(2^-6)
                 'd7:        atan_lut = 16'b0000000010000000; // atan(2^-7)
                 'd8:        atan_lut = 16'b0000000001000000; // atan(2^-8)
-                'd9:       atan_lut = 16'b0000000000100000; // atan(2^-9)
+                'd9:        atan_lut = 16'b0000000000100000; // atan(2^-9)
                 'd10:       atan_lut = 16'b0000000000010000; // atan(2^-10)
                 default:    atan_lut = 16'b0000000000001000; // default case
             endcase
