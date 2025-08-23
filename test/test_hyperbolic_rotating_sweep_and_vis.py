@@ -76,31 +76,39 @@ async def test_hyperbolic_sweep_and_vis(dut):
     # Make plots for visualization
     OUTDIR = Path(os.getenv("CORDIC_PLOTS_DIR", os.getenv("GITHUB_WORKSPACE", "."))) / "artifacts/cordic"
     OUTDIR.mkdir(parents=True, exist_ok=True)
-    
-    plt.figure(figsize=(12, 5))
+
+    plt.figure(figsize=(14, 4))
     plt.subplot(1, 2, 1)
     plt.title(f"Sinh Sweep : MAE = {MAE_sinh:.5f}")
     plt.plot(linspace, sinhs_true, label='True Sinh', color='blue')
-    plt.plot(linspace, sinhs, label='Computed Sinh', linestyle='--', color='red')
+    plt.plot(linspace, sinhs, label='Sinh from hardware block', linestyle='--', color='red')
+    plt.xlabel("input x")
+    plt.ylabel("Sinh(x) value")
     plt.legend()
 
     plt.subplot(1, 2, 2)
     plt.plot(linspace, sinhs_true - sinhs, label='residue (true - predicted)', color='red')
     plt.legend()
+    plt.xlabel("input x")
+    plt.ylabel("Residue : true - predicted")
     plt.savefig(os.path.join(OUTDIR, "sinh.png"),  dpi=180, bbox_inches="tight")
     plt.close()
 
 
-    plt.figure(figsize=(12, 5))
+    plt.figure(figsize=(14, 4))
     plt.subplot(1, 2, 1)
     plt.title(f"Cosine Sweep : MAE = {MAE_cosh:.5f}")
     plt.plot(linspace, cosinhs_true, label='True Cosh', color='blue')
-    plt.plot(linspace, cosinhs, label='Computed Cosh', linestyle='--', color='red')
+    plt.plot(linspace, cosinhs, label='Cosh from hardware block', linestyle='--', color='red')
+    plt.xlabel("input x")
+    plt.ylabel("cosh(x) value")
     plt.legend()
 
     plt.subplot(1, 2, 2)
     plt.plot(linspace, cosinhs_true - cosinhs, label='residue (true - predicted)', color='red')
     plt.legend()
+    plt.xlabel("input x")
+    plt.ylabel("Residue : true - predicted")
     plt.savefig(os.path.join(OUTDIR, "cosh.png"), dpi=180, bbox_inches="tight")
     plt.close()
     

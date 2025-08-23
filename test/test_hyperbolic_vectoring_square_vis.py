@@ -73,21 +73,27 @@ async def test_hyperbolic_basic(dut):
 
     MAE = np.mean(np.abs(s_true - np.array(s_pred)))
 
-    plt.figure(figsize=(12, 10))
+    plt.figure(figsize=(14, 10))
     plt.subplot(2, 2, 1)
     plt.title(f"square root : MAE = {MAE:.5f}")
     plt.plot(s, s_true, label='True Square Root', color='blue')
-    plt.plot(s, s_pred, label='Computed Square Root', linestyle='--', color='red')
+    plt.plot(s, s_pred, label='Square Root from hardware block', linestyle='--', color='red')
+    plt.xlabel("input x")
+    plt.ylabel("Square Root value")
     plt.legend()
 
     plt.subplot(2, 2, 2)
-    plt.title("Resdiual : true - predicted")
+    plt.title("Residual : true - predicted")
     plt.plot(s, s_true - s_pred, label='residue (true - predicted)', color='red')
+    plt.xlabel("input x")
+    plt.ylabel("Residue : true - predicted")
     plt.legend()
     
     plt.subplot(2,2, 3)
     plt.title("tanh computed")
-    plt.plot(s, np.array(tanh_pred), label="computed tanh()", color="red")
-    
+    plt.plot(s, np.array(tanh_pred), label="tanh(x) from hardware block", color="red")
+    plt.xlabel("input x")
+    plt.ylabel("out 2")
+    plt.legend()
     plt.savefig(os.path.join(OUTDIR, "sqrt.png"),  dpi=180, bbox_inches="tight")
     plt.close()
