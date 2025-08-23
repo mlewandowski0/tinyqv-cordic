@@ -1,15 +1,15 @@
 module CORDIC_atanh_ROM_comb #(parameter FIXED_WIDTH = 16,
                                parameter ITERATIONS = 9)
                                (
-                                    input wire [$clog2(ITERATIONS)-1:0] which_angle,
+                                    input wire [$clog2(ITERATIONS):0] which_angle,
                                     output wire signed [FIXED_WIDTH-1:0] angle_out
                                );
 
 
-    wire [$clog2(ITERATIONS)-1:0] idx = (which_angle > (ITERATIONS-1)) ? (ITERATIONS-1) : which_angle;
+    wire [$clog2(ITERATIONS):0] idx = (which_angle > (ITERATIONS-1)) ? (ITERATIONS-1) : which_angle;
 
     function [FIXED_WIDTH-1:0] atanh_lut;
-        input [$clog2(ITERATIONS)-1:0] i;
+        input [$clog2(ITERATIONS):0] i;
 
         begin 
             case(i)

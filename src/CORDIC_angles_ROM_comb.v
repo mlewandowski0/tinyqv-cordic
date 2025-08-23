@@ -3,13 +3,13 @@ module CORDIC_angles_ROM_comb #(
     parameter ITERATIONS  = 9
 )(
     // 5-bits is a more then iterations but  
-    input  wire [$clog2(ITERATIONS)-1:0] which_angle,                   
+    input  wire [$clog2(ITERATIONS):0] which_angle,                   
     output wire signed [FIXED_WIDTH-1:0] angle_out
 );
-    wire [$clog2(ITERATIONS)-1:0] idx = (which_angle > (ITERATIONS-1)) ? (ITERATIONS-1) : which_angle;
+    wire [$clog2(ITERATIONS):0] idx = (which_angle > (ITERATIONS-1)) ? (ITERATIONS-1) : which_angle;
 
     function [FIXED_WIDTH-1:0] atan_lut;
-        input [$clog2(ITERATIONS)-1:0] i;
+        input [$clog2(ITERATIONS):0] i;
         begin
             case (i)
                 'd0:        atan_lut = 16'b0011001001000100; // atan(2^-0)

@@ -9,7 +9,7 @@ module CORDIC #(
     input                                   start,
     input                                   is_rotating,            // LINEAR: 1=multiply, 0=divide
     input [1:0]                             mode,                   // `CIRCULAR_MODE / `LINEAR_MODE / `HYPERBOLIC_MODE
-    input [$clog2(FIXED_WIDTH)-1:0]         alpha_one_left_shift,
+    input [$clog2(FIXED_WIDTH):0]         alpha_one_left_shift,
 
     input [FIXED_WIDTH-1:0]                 A,
     input [FIXED_WIDTH-1:0]                 B,
@@ -26,20 +26,33 @@ module CORDIC #(
         end
     endfunction
 
-    // MSB index (priority encoder); returns highest set bit (0..W-1), or 0 if v==0
-    function integer msb_index;
+    // Width needed to index bits [0..FIXED_WIDTH-1]
+    localparam integer IDX_W = (FIXED_WIDTH <= 1) ? 1 : $clog2(FIXED_WIDTH);
+
+    // MSB index (priority encoder); returns highest set bit (0..FIXED_WIDTH-1),
+    // or 0 if v == 0
+    function [IDX_W:0] msb_index;
         input [FIXED_WIDTH-1:0] v;
         integer i;
+        reg hit;
         begin
-            msb_index = 0;
-            for (i = 0; i < FIXED_WIDTH; i = i + 1)
-                if (v[i]) msb_index = i;
+            msb_index = {(IDX_W+1){1'b0}};
+            hit = 1'b0;
+            // scan from MSB down; capture the first '1'
+            for (i = FIXED_WIDTH-1; i >= 0; i = i - 1) begin
+                if (!hit && v[i]) begin
+                    msb_index = i[IDX_W:0]; // truncate i to IDX_W safely
+                    hit = 1'b1;               // stop updating after first hit
+                end
+            end
         end
     endfunction
 
     // ---------------- state ----------------
     localparam integer ITER_W = $clog2(ITERATIONS);
-    reg      [ITER_W-1:0] iteration;
+
+
+    reg      [ITER_W:0] iteration;
     wire     last_iter = (iteration == (ITERATIONS-1));
 
     reg running;
@@ -50,16 +63,15 @@ module CORDIC #(
     wire signed  [FIXED_WIDTH-1:0] next_x, next_y, next_z;
 
     // shift used by the iter stage (0..W-1)
-    wire [ITER_W-1:0] sh_u = iteration;
-    wire [ITER_W-1:0] sh   = (sh_u > (FIXED_WIDTH-1)) ? (FIXED_WIDTH-1) : sh_u;
+    wire [ITER_W:0] sh_u = iteration;
+    wire [ITER_W:0] sh   = (sh_u > (FIXED_WIDTH-1)) ? (FIXED_WIDTH-1) : sh_u;
 
     // σ via MSB (cheaper): rotate: ~z[MSB]; vector: y[MSB]
     wire is_sigma_positive = rot_latched ? ~z[FIXED_WIDTH-1] : y[FIXED_WIDTH-1];
 
     // “1.0” in Z-scale and linear delta (single shifter)
-    wire signed [FIXED_WIDTH-1:0] one_q     = ({{(FIXED_WIDTH-1){1'b0}},1'b1}) <<< alpha_one_left_shift;
     wire       sh_le_alpha = (sh <= alpha_one_left_shift);
-    wire [$clog2(FIXED_WIDTH)-1:0] diff = alpha_one_left_shift - sh[$clog2(FIXED_WIDTH)-1:0];
+    wire [$clog2(FIXED_WIDTH):0] diff = alpha_one_left_shift - sh[$clog2(FIXED_WIDTH):0];
     wire signed [FIXED_WIDTH-1:0] alpha_linear = sh_le_alpha ? ({{(FIXED_WIDTH-1){1'b0}},1'b1} <<< diff) : '0;
 
     // Combinational atan LUT (signed Q2.14)
@@ -110,21 +122,20 @@ module CORDIC #(
     //localparam signed [FIXED_WIDTH-1:0] K_HYP = 16'b0010011010100100; // 1.20751953125 in Q3.13
 
     // ---------------- single-cycle prescaler ----------------
-    localparam integer K_W = $clog2(FIXED_WIDTH+1);
-    reg  [K_W-1:0] k_lat;  // latched prescale for post-scaling
+    localparam integer K_W = $clog2(FIXED_WIDTH);
+    reg  [K_W:0] k_lat;  // latched prescale for post-scaling
 
     // Compute k for LINEAR:
     //   multiply (rot=1): want |z| < 2*one_q  ->  k = max(0, msb(|z|) - (alpha_one_left_shift + 1))
     //   divide   (rot=0): want |y| < 2|x|     ->  k = max(0, msb(|y|) - msb(|x|))
-    wire [K_W-1:0] msb_z = msb_index(abs_tc($signed(B)));
-    wire [K_W-1:0] msb_y = msb_index(abs_tc($signed(B)));
-    wire [K_W-1:0] msb_x = msb_index(abs_tc($signed(A)));
+    wire [K_W:0] msb_z = msb_index(abs_tc($signed(B)));
+    wire [K_W:0] msb_y = msb_index(abs_tc($signed(B)));
+    wire [K_W:0] msb_x = msb_index(abs_tc($signed(A)));
 
-    wire [K_W-1:0] k_mul = (msb_z >= (alpha_one_left_shift + 1)) ? (msb_z - alpha_one_left_shift) : {K_W{1'b0}};
-    wire [K_W-1:0] k_div = (msb_y > msb_x) ? (msb_y - msb_x) : {K_W{1'b0}};
+    wire [K_W:0] k_mul = (msb_z >= (alpha_one_left_shift + 1)) ? (msb_z - alpha_one_left_shift) : {(K_W+1){1'b0}};
+    wire [K_W:0] k_div = (msb_y > msb_x) ? (msb_y - msb_x) : {(K_W+1){1'b0}};
 
-    wire [K_W-1:0] k_comb =
-        (mode == `LINEAR_MODE) ? (is_rotating ? k_mul : k_div) : {K_W{1'b0}};
+    wire [K_W:0] k_comb =(mode == `LINEAR_MODE) ? (is_rotating ? k_mul : k_div) : {(K_W+1){1'b0}};
 
     // hyperbolic mode : does iteration needs repeating 
     // hyperbolic mode requires repeition on i = 4, and i = 13 
@@ -183,14 +194,14 @@ module CORDIC #(
     always @(posedge clk) begin
         if (!rst_n) begin
             running          <= 1'b0;
-            iteration        <= {ITER_W{1'b0}};
+            iteration        <= 'd0;
             mode_latched     <= 2'b00;
             rot_latched      <= 1'b0;
             x                <= '0; 
             y                <= '0; 
             z                <= '0;
             done             <= 1'b0;
-            k_lat            <= {K_W{1'b0}};
+            k_lat            <= {(K_W+1){1'b0}};
             skipped_already  <= 0;
         end else begin
             done             <= 1'b0;
@@ -199,7 +210,7 @@ module CORDIC #(
                 mode_latched    <= mode;
                 rot_latched     <= is_rotating;
                 k_lat           <= k_comb;       // latch k (constant-latency prescale)
-                iteration       <= {ITER_W{1'b0}};
+                iteration       <= 'd0;
                 running         <= 1'b1;
                 skipped_already <= 0;
 

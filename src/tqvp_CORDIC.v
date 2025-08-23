@@ -50,7 +50,7 @@ module tqvp_CORDIC
     reg is_rotating_reg, start_reg;
 
     reg [FIXED_WIDTH-1:0]           A, B;
-    reg [$clog2(FIXED_WIDTH)-1:0]   shift;
+    reg [$clog2(FIXED_WIDTH):0]   shift;
 
     wire [FIXED_WIDTH-1:0]          out1, out2;
     wire                            done;     
@@ -98,22 +98,27 @@ module tqvp_CORDIC
             begin
                 if (data_write_n != 2'b11)              A[7:0]   <= data_in[7:0];
                 if (data_write_n[1] != data_write_n[0]) A[15:8]  <= data_in[15:8];
+                
+                /*
                 if (FIXED_WIDTH > 16) begin : A_hi_bits
                 if (data_write_n == 2'b10)              A[FIXED_WIDTH-1:16] <= data_in[FIXED_WIDTH-1:16];                
                 end
+                */
             end
             else if (address == 6'h2)
             begin
                 if (data_write_n != 2'b11)              B[7:0]   <= data_in[7:0];
                 if (data_write_n[1] != data_write_n[0]) B[15:8]  <= data_in[15:8];
+                /*
                 if (FIXED_WIDTH > 16) begin : B_hi_bits
                 if (data_write_n == 2'b10)              B[FIXED_WIDTH-1:16] <= data_in[FIXED_WIDTH-1:16];                
                 end
+                */
             end
             else if (address == 6'h3)
             begin
                 if (data_write_n != 2'b11) 
-                    shift <= data_in[$clog2(FIXED_WIDTH)-1:0];
+                    shift <= data_in[$clog2(FIXED_WIDTH):0];
             end
         end
     end
@@ -158,7 +163,8 @@ module tqvp_CORDIC
     // registers are being read.
     wire _unused = &{data_read_n, 1'b0};
     wire _unused2 = &{ui_in, 1'b0}; // ui_in is unused as we don't use the PMOD inputs in this example
-    
+    wire _unused3 = &data_in[31:16];
+
     // or show something useful, e.g. status bits:
     assign uo_out = {6'b0, status_reg};
 endmodule

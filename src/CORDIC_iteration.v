@@ -5,7 +5,7 @@ module CORDIC_iteration #(parameter FIXED_WIDTH = 16,
                          input signed  [FIXED_WIDTH-1:0] y,
                          input signed  [FIXED_WIDTH-1:0] z,
 
-                         input [$clog2(ITERATIONS)-1:0] shift,
+                         input [$clog2(ITERATIONS):0] shift,
                          input signed [FIXED_WIDTH-1:0] delta_z,
 
                          input is_sigma_positive,
@@ -16,10 +16,17 @@ module CORDIC_iteration #(parameter FIXED_WIDTH = 16,
                          output reg signed [FIXED_WIDTH-1:0] next_z);
 
         // clamp shift to [0 ... FIXED_WIDTH-1]
-        localparam integer SHIFT_W = $clog2(ITERATIONS);
-
-        wire [SHIFT_W-1:0] shift_raw = shift;
-        wire [7:0] sh = (shift > (FIXED_WIDTH-1)) ? (FIXED_WIDTH-1) : shift;
+        //localparam integer SHIFT_W = $clog2(ITERATIONS);
+        
+        // if (FIXED_WIDTH == 16)
+        // begin
+        //    wire [7:0] sh = (shift > (FIXED_WIDTH-1)) ? (FIXED_WIDTH-1) : shift;
+        //end
+        //else 
+        //begin
+        wire [4:0] sh = shift;
+        //end
+        
 
         // precompute shifts once
         wire signed [FIXED_WIDTH-1:0] x_s = x >>> sh;

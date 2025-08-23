@@ -40,6 +40,4 @@ module CORDIC_angles_ROM  #(parameter FIXED_WIDTH = 16,
         end
     end
 
-
-
 endmodule
