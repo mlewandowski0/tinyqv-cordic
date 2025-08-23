@@ -13,7 +13,7 @@ module CORDIC_atanh_ROM_comb #(parameter FIXED_WIDTH = 16,
 
         begin 
             case(i)
-                'd0: atanh_lut     = 16'bxxxxxxxxxxxxxxx;   
+                // Q2.14 
                 'd1: atanh_lut     = 16'b0010001100101000;     // atanh(2^-1)
                 'd2: atanh_lut     = 16'b0001000001011001;     // atanh(2^-2)
                 'd3: atanh_lut     = 16'b0000100000001011;     // atanh(2^-3)

@@ -106,7 +106,8 @@ module CORDIC #(
     localparam signed [FIXED_WIDTH-1:0] K_INV_Q = 16'sd9949;
 
     // K for hyperbolic rotation
-    localparam signed [FIXED_WIDTH-1:0] K_HYP = 16'b0100110101001000; // 1.20751953125
+    localparam signed [FIXED_WIDTH-1:0] K_HYP = 16'b0100110101001000; // 1.20751953125 in Q2.14
+    //localparam signed [FIXED_WIDTH-1:0] K_HYP = 16'b0010011010100100; // 1.20751953125 in Q3.13
 
     // ---------------- single-cycle prescaler ----------------
     localparam integer K_W = $clog2(FIXED_WIDTH+1);
