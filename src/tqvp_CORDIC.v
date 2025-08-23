@@ -166,5 +166,5 @@ module tqvp_CORDIC
     wire _unused3 = &data_in[31:16];
 
     // or show something useful, e.g. status bits:
-    // assign uo_out = {6'b0, status_reg};
+    assign uo_out = {6'b0, status_reg};
 endmodule

@@ -30,20 +30,20 @@ The idea behind the CORDIC algorithm is quite simple and powerful, which allows 
 
 CORDIC is iterative algorithm (in this implementation it takes 12 iterations/clock cycles to compute any function ), and in most general, unified form, this algorithm and designed hardware solves a following set of equations : 
 
-$$\begin{equation}
+\begin{equation}
 x[i+1]  = x[i] - m \cdot \sigma_{j} \cdot y[i]    
-\end{equation}$$
+\end{equation}
 
-$$\begin{equation}
+\begin{equation}
 y[i+1]  = y[i] + m \sigma_{j} \cdot x[i]
-\end{equation}$$
+\end{equation}
 
-$$\begin{equation}
+\begin{equation}
 z[i+1]  \begin{cases} z[j] - \sigma_{j} tan^{-1}(2^{-j}) \quad \text{if m = 1} \\ 
 z[j] - \sigma_{j} tanh^{-1}(2^{-j}) \quad \text{if m = -1} \\ 
 z[j] - \sigma_{j}(2^{-j}) \quad \text{if m = 0}
 \end{cases}
-\end{equation}$$
+\end{equation}
 
 
 
