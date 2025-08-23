@@ -19,13 +19,42 @@ Peripheral index: n7
 
 ## What it does
 
-This repository implements a coordinate rotation digital computer (CORDIC) algorithm, which allows to compute 
+This repository implements a coordinate rotation digital computer (CORDIC) algorithm, which allows to compute multiple mathematic functions, like $sin(x)$, $cos(x)$, $sinh(x)$, $cosh(x)$, square root, fixed point multiplication and division in few clock cycles.
 
 
 ## Brief introduction to CORDIC 
 
+Trigonometric functions, Multiplication, division are fundamental operations, often required in engineering. They can be often encountarerd in digital signal processing or control. While it is possible to store the trigonometric functions in memory as lookup tables and interpolate, this might require large amount of memories. There exists however a elegant solution of computing these values quite fast, using only additions, subtractions and shifts with a tiny memory footprint. This solution is coordinate rotation digital computer (CORDIC), proposed by Jack E. Volder in 1959 [1] and it can be found in a range of real world microcontrollers for low power, like STM32L031 [2], STM32F031 [2] or other [3]. 
+
+The idea behind the CORDIC algorithm is quite simple and powerful, which allows to compute many different functions like : $sin(x)$, $cos(x)$, $sinh(x)$, $cos(x)$, $\sqrt{x}$, $exp(x)$, $ln(x)$, $a \cdot b$ and $\frac{a}{b}$ using the same hardware. This algorithm is often coverted in standard textbooks and notes [4, 5], therefore only a brief description, to understand how to interact with the underlying hardware with some visualization, to understand it intuitively.
+
+CORDIC is iterative algorithm (in this implementation it takes 12 iterations/clock cycles to compute any function ), and in most general, unified form, this algorithm and designed hardware solves a following set of equations : 
+
+$$\begin{equation}
+x[i+1]  = x[i] - m \cdot \sigma_{j} \cdot y[i]    
+\end{equation}$$
+
+$$\begin{equation}
+y[i+1]  = y[i] + m \sigma_{j} \cdot x[i]
+\end{equation}$$
+
+$$\begin{equation}
+z[i+1]  \begin{cases} z[j] - \sigma_{j} tan^{-1}(2^{-j}) \quad \text{if m = 1} \\ 
+z[j] - \sigma_{j} tanh^{-1}(2^{-j}) \quad \text{if m = -1} \\ 
+z[j] - \sigma_{j}(2^{-j}) \quad \text{if m = 0}
+\end{cases}
+\end{equation}$$
+
+
+
+- [1] [J. E. Volder, "The CORDIC Trigonometric Computing Technique," in IRE Transactions on Electronic Computers, vol. EC-8, no. 3, pp. 330-334, Sept. 1959, doi: 10.1109/TEC.1959.5222693.](https://ieeexplore.ieee.org/document/5222693)
+- [2] [STM32 DT0085 application note : Coordinate rotation digital computer algoritm (CORIDIC)](https://www.st.com/resource/en/design_tip/dt0085-coordinate-rotation-digital-computer-algorithm-cordic-to-compute-trigonometric-and-hyperbolic-functions-stmicroelectronics.pdf)
+- [3] [Application note AN5325 : How to use the CORDIC to perform mathematical functions on STM32 MCUs](https://www.st.com/content/ccc/resource/technical/document/application_note/group1/50/31/98/a8/b5/da/4e/a4/DM00614795/files/DM00614795.pdf/jcr:content/translations/en.DM00614795.pdf)
+- [4] [CORDIC ALGORITHM AND IMPLEMENTATIONS](https://web.cs.ucla.edu/digital_arithmetic/files/ch11.pdf) 
+- [5] [Chapter 24 : CORDIC Algorithms and Architectures](https://people.eecs.berkeley.edu/~newton/Classes/EE290sp99/lectures/ee290aSp996_1/cordic_chap24.pdf)
 
 ## Visualization 
+
 
 ## Register map
 
@@ -33,7 +62,7 @@ Document the registers that are used to interact with your peripheral
 
 | Address | Name         | Access | Description |
 |--------:|--------------|:------:|-------------|
-| 0x00    | config       |  R/W   | Control bits {is_rot[3], mode[2:1], start[0]}. See §Config (0x00). |
+| 0x00    | config       |  R/W   | Control bits {is_rot, mode[1:0], en}. See §Config (0x00). |
 | 0x01    | input A      |   W    | Operand A (per-mode; see details). |
 | 0x02    | input B      |   W    | Operand B (per-mode; see details). |
 | 0x03    | 1.0 position |   W    | Q-format selector (e.g., 11 ⇒ Q5.11; 14 ⇒ Q2.14). |
