@@ -31,18 +31,28 @@ This repository implements a coordinate rotation digital computer (CORDIC) algor
 
 Document the registers that are used to interact with your peripheral
 
-| Address | Name  | Access | Description                                                         |
-|---------|-------|--------|---------------------------------------------------------------------|
-| 0x00    | config  | R/W    | 4 bits corresponding to mode of the CORDIC.  It is stored in following format {is_rotating, mode, start} with is_rotating being one bit, mode being 2 bits denoting mode of operation (0 = CIRCULAR, 1 = LINEAR, 2 = HYPERBOLIC) and start denotes a single bit( which wil be cleared) that if set to 1, will start the computation given the inputs.                                                    |
-| 0x01    | input A  | W    | First input denoted as A.| 
-| 0x02    | input B  | W    | Second input denoted as B.| 
-| 0x03 | 1.0 position | W | Controls where 1.0 is for linear mode. For example, if set to 11, input A and B will denote signed Q5.11 values. For 14, input A and B will denote signed Q2.14.|
-|0x04| output 1 | R | first output.|  
-|0x05| output 2 | R | second output.|  
-|0x06| Status | R | 0 : corresponds to ready. <br> 1 : corresponds to BUSY (the output will be available but it is not yet done with computation). <br> 2 : means that CORDIC stopped iterations, outputs are ready and it can accept new values. |  
+| Address | Name         | Access | Description |
+|--------:|--------------|:------:|-------------|
+| 0x00    | config       |  R/W   | Control bits {is_rot[3], mode[2:1], start[0]}. See §Config (0x00). |
+| 0x01    | input A      |   W    | Operand A (per-mode; see details). |
+| 0x02    | input B      |   W    | Operand B (per-mode; see details). |
+| 0x03    | 1.0 position |   W    | Q-format selector (e.g., 11 ⇒ Q5.11; 14 ⇒ Q2.14). |
+| 0x04    | output 1     |   R    | Primary result. |
+| 0x05    | output 2     |   R    | Secondary result / diagnostic. |
+| 0x06    | status       |   R    | 0=ready, 1=busy, 2=done. |
+
+
 
 ## Detailed description of the registers
-### input A 
+
+### Config (0x00)
+| Bits  | Name   | Meaning                               |
+|:-----:|--------|----------------------------------------|
+| [3]   | is_rot | 1 = Rotating, 0 = Vectoring            |
+| [2:1] | mode   | 00=CIRCULAR, 01=LINEAR, 10=HYPERBOLIC |
+| [0]   | start  | Write 1 to start; auto-clears          |
+
+### input A (0x01)
 - __Circular and Rotating mode__ : angle represented as radian in signed fixed point format. For 16 bit mode, this corresponds to  Q2.14 value.
 - __Circular and Vectoring mode__: denotes first input, for which we will compute the magnitude and atan, which is $\sqrt{a^2 + b^2}$. This is represented as a Q2.14 value.
 -  __Linear and Rotating mode__: A represents first multiplicand in variable fixed point format. To control on where the position of 1.0 is, register 0x03 has to be used. To given an example,  if register 0x03 is set to 11, this input (A) and input (B) represent value in Q5.11 format.
@@ -50,7 +60,7 @@ Document the registers that are used to interact with your peripheral
 - __Hyperbolic and Rotating mode__ : the value for which we will compute the sinh(A) and cos(A) represented in Q2.14 fixed point representation. An important limitation here is range : due to lack of resources, the input has to be in range[-1.1161, 1.1161]. It is possible to extend this range using some hyperbolic identities (more clock cycles required though). 
 - __Hyperbolic and Vectoring mode__ :  first input A for hyperbolic mode. The output here can represent any fixed point __as long as it is greater then second input B__ ($\sqrt{A^2 -B^2}$ becomes undefined then), because the output is __not scaled__ (not multiplied by $K_{1}$ due to resource limitations). It is up to user to either multiply by $K_{1}\approx \frac{1}{0.82816} \approx 1.207496$ or use it the computed value of $K_{1} \sqrt{A^{2} - B^{2}}$. <br>
 
-### input B
+### input B (0x02)
 - __Circular and Rotating mode__ : not used. 
 - __Circular and Vectoring mode__: denotes second input, for which we will compute the magnitude and atan, which is $\sqrt{a^2 + b^2}$. This is represented as a Q2.14 value. 
 - __Linear and Rotating mode__: A represents second multiplicand in variable fixed point format  : to control on where the position of 1.0 is. To given an example,  if register 0x03 is set to 11, this input (A) and input (B) represent value in Q5.11 format.
@@ -58,20 +68,27 @@ Document the registers that are used to interact with your peripheral
 - __Hyperbolic and Rotating mode__ not used. 
 - __Hyperbolic and Vectoring mode__ :  Second value B for hyperbolic mode. __this value has to be smaller then A, otherwise result will be incorrect__. The output here can represent any fixed point. The output is __not scaled__ (not multiplied by $K_{1}$ due to resource limitations). It is up to user to either multiply by $K_{1}\approx \frac{1}{0.82816} \approx 1.207496$ or use it the computed value of $K_{1} \sqrt{A^{2} - B^{2}}$.
 
-### Output 1 
+### Output 1 (0x04)
  - __Circular and Rotating mode__ : returns cos(A), stored in Q2.14 format. 
  -  __Circular and Vectoring mode__: returns $K_{C} \cdot \sqrt{A^2 + B^2}$ where $K_{C} = 1.64676$.
  -  __Linear and Rotating mode__: returns $A \cdot B$ in a fixed float format configured by the register 0x03. <br> - __Linear and Vectoring mode__: returns $\frac{B}{A}$ in a fixed float format by the register 0x03. 
  - __Hyperbolic and Rotating mode__ : returns cosh(A) stored in Q2.14 format. 
  - __Hyperbolic and Vectoring mode__ :  returns $K_{H} \cdot \sqrt{A^2 - B^2}$ where $K_{H} \approx 0.82816$. The output is not scaled : this means that it is up to programmer and software to interpret this value (with consistent format of A, B and $K_H$ its possible to get wide range of fixed points) <br>
 
-### Output 2 
+### Output 2 (0x05)
 - __Circular and Rotating mode__ : returns sin(A), stored in Q2.14 format. 
 - __Circular and Vectoring mode__: returns $tan^{-1}(\frac{B}{A})$ 
 - __Linear and Rotating mode__: In the unified CORDIC this returned value corresponds to final value of $z$ (z after N iterations). This value is quite difficult to interpret, but it is somehow dependent on the error. In ideal case this should be 0 (in which case the output 1 corresponds to correct value). Large magnitude values can indicate that the conversion was unsuccessful. 
 - __Linear and Vectoring mode__: In the unified CORDIC this returned value corresponds to final value of $y$ (y after N iterations). This value is quite difficult to interpret, but it is somehow dependent on the error. In ideal case this should be 0 (in which case the output 1 corresponds to correct value). Large magnitude values can indicate that the conversion was unsuccessful. 
 - __Hyperbolic and Rotating mode__ : returns sinh(A) stored in Q2.14 format.
 - __Hyperbolic and Vectoring mode__ :  returns $tanh^{-1}(\frac{y}{x})$ stored in Q2.14 format <br>
+
+### Status (0x06)
+| Value | Meaning |
+|:----:|---------|
+| 0    | ready   |
+| 1    | busy    |
+| 2    | done    |
 
 ## How to test
 This section explains how to test and use this peripheral with examples. 
