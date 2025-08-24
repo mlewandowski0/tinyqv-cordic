@@ -33,7 +33,7 @@ This algorithm is often covered in standard textbooks and notes [4, 5]; therefor
 Key ideas for using it : 
 - Inputs/outputs: provide initial ($x_0, y_0, z_0$) via registers (exposed as A, B and the third value is determined automatically). Every iteration, the output changes and provides some value  
 - In its most basic functionality, CORDIC has three distinct modes of operation: Circular (m = 1), Linear (m = 0) and Hyperbolic (m = -1). 
-- Each of these three modes has two submodes: this configures which of the values we will drive towards zero and is represented by $\sigma_j$. These modes are known as Rotation ($\sigma_{j} = sign(z_j)^{+}$) and Vectoring ($\sigma_{j} = -sign(y_j)^{+}$)
+- Each of these three modes has two submodes: this configures which of the values we will drive towards zero and is represented by $\sigma_j$. These modes are known as Rotation ($\sigma_{i} = sign(z_i)^{+}$) and Vectoring ($\sigma_{i} = -sign(y_i)^{+}$)
 
 
 ### Operating modes 
@@ -48,14 +48,14 @@ Let $A, B$ be the register inputs and $out1, out2$ the outputs.
 | 1    | Vectoring      |  a    | b |$K_{C} \sqrt{a^2+b^2}$|$tan^{-1}(\frac{b}{a})$|
 | 0    | Rotating     |   a    | b |$a \cdot b$| error $\epsilon$|
 | 0    | Vectoring |   a    | b | $\frac{b}{a}$| error $\epsilon$|
-| -1    | Rotating      |   a    | b | $cosh(a)$ | $sinh(a)$|
-| -1    | Vectoring     |   a    |  b | $K_{C} \sqrt{a^2 - b^2}$ |$tanh^{-1}(\frac{b}{a})$|
+| -1    | Rotating      |   a    | - | $cosh(a)$ | $sinh(a)$|
+| -1    | Vectoring     |   a    |  b | $K_{H} \sqrt{a^2 - b^2}$ |$tanh^{-1}(\frac{b}{a})$|
 | -1    | Vectoring    |   a + 1.0    | a - 1.0 |$2 K_{H}\sqrt{a}$|error $\epsilon$|
 
 ### Note about Scaling
 - The rotating path returns the values directly and can be interpreted right away (pre-scaling).
 - For vectoring, circular mode, the output has to be post-scaled. The output will be multiplied by the circular gain/constant $K_C \approx 1.646760$; therefore, to get the exact value, the user has to multiply by the inverse of that.  
-- Simillarly, hyperbolic rotating output values directly. Vectoring mode, however, outputs again values multiplied by  Hyperbolic gain/constant: $K_H \approx 1.207497$.  
+- Simillarly, hyperbolic rotating output values directly. Vectoring mode, however, outputs again values multiplied by Hyperbolic gain/constant: $K_H \approx 1.207497$.  
 - $\epsilon$ here can help check whether the output is correct or not. It should be close to 0 if the values are set correctly
 
 ### References
@@ -96,10 +96,10 @@ Document the registers that are used to interact with your peripheral
 
 | Address | Name         | Access | Description |
 |--------:|--------------|:------:|-------------|
-| 0x00    | config       |  R/W   | Control bits {is_rot, mode[1:0], en}. See §Config (0x00). |
+| 0x00    | config       |  R/W   | Control bits {is_rot, mode[1:0], start}. See §Config (0x00). |
 | 0x01    | input A      |   W    | Operand A (per-mode; see details). |
 | 0x02    | input B      |   W    | Operand B (per-mode; see details). |
-| 0x03    | 1.0 position |   W    | Q-format selector (e.g., 11 ⇒ Q5.11; 14 ⇒ Q2.14). |
+| 0x03    | 1.0 position |   W    | Q-format selector (e.g., 11 -> Q5.11; 14 -> Q2.14). |
 | 0x04    | output 1     |   R    | Primary result. |
 | 0x05    | output 2     |   R    | Secondary result / diagnostic. |
 | 0x06    | status       |   R    | 0=ready, 1=busy, 2=done. |
@@ -121,7 +121,7 @@ Document the registers that are used to interact with your peripheral
 -  __Linear and Rotating mode__: Multiplicand a represented in fixed point format. To control the position of 1.0, you need to use register 0x03. To give an example,  if register 0x03 is set to 11, this input (a) and input (b) represent the value in Q5.11 format.
 - __Linear and Vectoring mode__: Denominator a for $\frac{b}{a}$. Same Q-format for Linear Rotating mode.
 - __Hyperbolic and Rotating mode__ : Argument a for sinh / cosh. Represented as Q2.14. Range limitation : [-1.1161, 1.1161].  
-- __Hyperbolic and Vectoring mode__ :  first input a for $\sqrt{a^2 - b^2}$. The Output here can represent any fixed point __as long as it is greater than then second input B__ ($\sqrt{a^2 -b^2}$ becomes undefined then), because the Output is __not scaled__ (not multiplied by $K_{1}$ due to resource limitations). It is up to user to either multiply by $K_{1}\approx \frac{1}{0.82816} \approx 1.207496$ or use it the computed value of $K_{1} \sqrt{a^{2} - b^{2}}$. <br>
+- __Hyperbolic and Vectoring mode__ :  first input a for $\sqrt{a^2 - b^2}$. The Output here can represent any fixed point __as long as it is greater than then second input B__ ($\sqrt{a^2 -b^2}$ becomes undefined then), because the Output is __not scaled__ (not multiplied by inverse of $K_{H}$ due to resource limitations). It is up to user to either multiply by $\frac{1}{K_{H}} \approx \frac{1}{0.82816} \approx 1.207496$ or use it the computed value of $K_{H} \sqrt{a^{2} - b^{2}}$. <br>
 
 ### input B (0x02)
 - __Circular and Rotating mode__ : Ignored. 
@@ -129,17 +129,18 @@ Document the registers that are used to interact with your peripheral
 - __Linear and Rotating mode__: Multiplicand b in variable fixed point format: to control where the position of 1.0 is. To give an example,  if register 0x03 is set to 11, this input (a) and input (B) represent a value in Q5.11 format.
 - __Linear and Vectoring mode__: b represents Numerator ($\frac{b}{a}$) in variable fixed point format. To control the position of 1.0, you have to use register 0x03. To give an example,  if register 0x03 is set to 11, this input (b) and input (a) represent a value in Q5.11 format. 
 - __Hyperbolic and Rotating mode__ Ignored. 
-- __Hyperbolic and Vectoring mode__ :  Second value B for hyperbolic mode. This value must be smaller than A; otherwise, the result will be incorrect. The Output here can represent any fixed point. The Output is __not scaled__ (not multiplied by $K_{1}$ due to resource limitations). It is up to user to either multiply by $K_{1}\approx \frac{1}{0.82816} \approx 1.207496$ or use it the computed value of $K_{1} \sqrt{A^{2} - B^{2}}$.
+- __Hyperbolic and Vectoring mode__ :  Second value B for hyperbolic mode. This value must be smaller than A; otherwise, the result will be incorrect. The Output here can represent any fixed point. The Output is __not scaled__ (not multiplied by inverse of $K_{H}$ due to resource limitations). It is up to user to either multiply by $\frac{1}{K_{H}} \approx \frac{1}{0.82816} \approx 1.207496$ or use it the computed value of $K_{H} \sqrt{a^{2} - b^{2}}$.
 
 # Q-format (1.0 position) (0x03)
 - This value stores the number of fractional bits (for example, 10 -> Q6.10 in 16-bit mode). This register is used for linear modes and outputs in this format.
 
 ### Output 1 (0x04)
- - __Circular and Rotating mode__ : returns cos(a), stored in Q2.14 format. 
- -  __Circular and Vectoring mode__: returns $K_{C} \cdot \sqrt{A^2 + B^2}$ where $K_{C} = 1.64676$.
- -  __Linear and Rotating mode__: returns $A \cdot B$ in a fixed float format configured by the register 0x03. <br> - __Linear and Vectoring mode__: returns $\frac{B}{A}$ in a fixed float format by the register 0x03. 
- - __Hyperbolic and Rotating mode__ : returns cosh(A) stored in Q2.14 format. 
- - __Hyperbolic and Vectoring mode__ :  returns $K_{H} \cdot \sqrt{A^2 - B^2}$ where $K_{H} \approx 0.82816$. The Output is not scaled: this means that it is up to the programmer and software to interpret this value (with a consistent format of A, B and $K_H$, it's possible to get a wide range of fixed points) <br>
+- __Circular and Rotating mode__ : returns cos(a), stored in Q2.14 format. 
+-  __Circular and Vectoring mode__: returns $K_{C} \cdot \sqrt{A^2 + B^2}$ where $K_{C} = 1.64676$.
+-  __Linear and Rotating mode__: returns $A \cdot B$ in a fixed float format configured by the register 0x03. <br> 
+- __Linear and Vectoring mode__: returns $\frac{B}{A}$ in a fixed float format by the register 0x03. 
+- __Hyperbolic and Rotating mode__ : returns cosh(A) stored in Q2.14 format. 
+- __Hyperbolic and Vectoring mode__ :  returns $K_{H} \cdot \sqrt{A^2 - B^2}$ where $K_{H} \approx 0.82816$. The Output is not scaled: this means that it is up to the programmer and software to interpret this value (with a consistent format of A, B and $K_H$, it's possible to get a wide range of fixed points) <br>
 
 ### Output 2 (0x05)
 - __Circular and Rotating mode__ : returns sin(A), stored in Q2.14 format. 
