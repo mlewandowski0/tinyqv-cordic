@@ -19,14 +19,14 @@ Peripheral index: n7
 
 ## What it does
 
-This repository implements a Coordinate Rotation Digital Computer (CORDIC) engine that computes standard math functions using only adds, subtracts, and shifts. Supported operations include $sin(x)$, $cos(x)$, $sinh(x)$, $cosh(x)$, square root, and fixed-point multiplication and division—all in a few clock cycles.
+This repository implements a Coordinate Rotation Digital Computer (CORDIC) engine that computes standard math functions using only additions, subtractions, and shifts. Supported operations include $sin(x)$, $cos(x)$, $sinh(x)$, $cosh(x)$, square root, and fixed-point multiplication and division—all in a few clock cycles.
 
 
 ## Brief introduction to CORDIC 
 
-Many DSP/control tasks need trigonometric functions and fundamental arithmetic (multiplication/division). Lookup tables are fast but memory-hungry. CORDIC offers a compact alternative: within a single hardware block, with much hardware reuse, it evaluates these functions iteratively with simple arithmetic and bit shifts. This method, dating back to the 1959 publication [1] by Jack E. Volder, is utilised in various real-world microcontrollers designed for low power, such as STM32L031 [2], STM32F031 [2], and other models [3]. 
+Many DSP/control tasks need trigonometric functions and fundamental arithmetic operations (multiplication/division). Lookup tables are fast but memory-hungry. CORDIC offers a compact alternative: within a single hardware block, with much hardware reuse, it evaluates these functions iteratively with additions, subtractions, small lookup table and bit shifts. This method, dating back to the 1959 publication [1] by Jack E. Volder, is utilised in various real-world microcontrollers designed for low power, such as STM32L031 [2], STM32F031 [2], and other models [3]. 
 
-This algorithm is often covered in standard textbooks and notes [4, 5]; therefore, only a brief description is provided to understand how to interact with the underlying hardware. In this design, CORDIC runs for N = 12 (12 clock cycles). In its unified form, it updates three state variables ($x_i, y_i, z_i$) each iteration. In a general, unified form, this algorithm and the designed hardware solve the following set of equations : 
+This algorithm is often covered in standard textbooks and notes [4, 5]; therefore, only a brief description is provided to understand how to interact with the underlying hardware. In this design, CORDIC runs for N = 12 (12 clock cycles) with inputs, states and outputs being 16-bit signed, fixed point values. In its unified form, it updates three state variables ($x_i, y_i, z_i$) each iteration. In a general, unified form, this algorithm and the designed hardware solve the following set of equations : 
 
 ![unified CORDIC equations](cordic_equation.png)
 
@@ -37,7 +37,7 @@ Key ideas for using it :
 
 
 ### Operating modes 
-To compute any of the previously mentioned functions, the user must set the mode m, select a rotating or vectoring configuration, and then specify the inputs. In most useful cases, we only need to set at most two values, and the module can automatically set the third value. While setting up three values allows for computing more, these functions are often a combination of basic functions (for example, outputs would compute A cos(a) + B sin(a)). Because of that and to save resources, there are only 2 16-bit inputs. There are also two outputs, out1 and out2.
+To compute any of the previously mentioned functions, the user must set the mode m, select a rotating or vectoring configuration, and then specify the inputs. In most useful cases, we only need to set at most two values, and the module can automatically set the third value. While setting up three values allows for computing more, these functions are often a combination of basic functions (for example, outputs would compute A cos(a) + B sin(a)). Because of that and to save resources, there are only 2 16-bit inputs. There are also two 16-bit outputs, out1 and out2.
 
 Let $A, B$ be the register inputs and $out1, out2$ the outputs.
 
@@ -46,7 +46,7 @@ Let $A, B$ be the register inputs and $out1, out2$ the outputs.
 |---------|--------------|:------:|-------------|-|-|
 | 1    | Rotating       |  a   | - |$cos(a)$|$sin(a)$|
 | 1    | Vectoring      |  a    | b |$K_{C} \sqrt{a^2+b^2}$|$tan^{-1}(\frac{b}{a})$|
-| 0    | Rotating     |   a    | b |$a \cdot b$| error $\epsilon$|
+| 0    | Rotating     |  a    | b |$a \cdot b$| error $\epsilon$|
 | 0    | Vectoring |   a    | b | $\frac{b}{a}$| error $\epsilon$|
 | -1    | Rotating      |   a    | - | $cosh(a)$ | $sinh(a)$|
 | -1    | Vectoring     |   a    |  b | $K_{H} \sqrt{a^2 - b^2}$ |$tanh^{-1}(\frac{b}{a})$|
@@ -73,7 +73,7 @@ Methods :
 - Circular/hyperbolic rotating results are shown in Q2.14. They are then converted to double floating point, and the residue between this value and the computed value by numpy is recorded
 - Linear modes use the Q-format selected by register 0x03
 - We report mean absolute error (MAE) for each of the functions 
--  
+
 ### Computed Sin(x) value (Verilog simulation compared against Python numpy values)
 ![](sine.png)
 
@@ -87,7 +87,7 @@ Methods :
 ![](cosh.png)
 
 ### Computed sqrt value (Verilog simulation compared against Python numpy values)
-The value is obtained from out1, then shifted by two and multiplied by the inverse of $K_{h} \approx 1.2075$. Finally, the value is compared against the value obtained from numpy.
+The value is obtained from out1, then shifted by two and multiplied by the inverse of $\frac{1}{K_{h}} \approx 1.2075$. Finally, the value is compared against the value obtained from numpy.
 ![](sqrt.png)
 
 ## Register map
@@ -118,16 +118,16 @@ Document the registers that are used to interact with your peripheral
 ### input A (0x01)
 - __Circular and Rotating mode__ : angle $\alpha$ in radians, signed fixed-point. The value is represented as Q2.14 in 16-bit mode. The value can range from -1.7178 rad to 1.7178 rad (+/-98.42 degrees)
 - __Circular and Vectoring mode__: First component representing a for $\sqrt{a^2 + b^2}$ (out1) and ($tan^{-1}(\frac{b}{a})$). Because the value is not scaled (Output multiplied by $K_{C}$), it's up to the user to set the fixed point format.
--  __Linear and Rotating mode__: Multiplicand a represented in fixed point format. To control the position of 1.0, you need to use register 0x03. To give an example,  if register 0x03 is set to 11, this input (a) and input (b) represent the value in Q5.11 format.
+-  __Linear and Rotating mode__: Multiplicand a represented in fixed point format. To control the position of 1.0, you need to use register 0x03. To give an example,  if register 0x03 is set to 11, this input a and input b represent the value in Q5.11 format.
 - __Linear and Vectoring mode__: Denominator a for $\frac{b}{a}$. Same Q-format for Linear Rotating mode.
 - __Hyperbolic and Rotating mode__ : Argument a for sinh / cosh. Represented as Q2.14. Range limitation : [-1.1161, 1.1161].  
 - __Hyperbolic and Vectoring mode__ :  first input a for $\sqrt{a^2 - b^2}$. The Output here can represent any fixed point __as long as it is greater than then second input B__ ($\sqrt{a^2 -b^2}$ becomes undefined then), because the Output is __not scaled__ (not multiplied by inverse of $K_{H}$ due to resource limitations). It is up to user to either multiply by $\frac{1}{K_{H}} \approx \frac{1}{0.82816} \approx 1.207496$ or use it the computed value of $K_{H} \sqrt{a^{2} - b^{2}}$. <br>
 
 ### input B (0x02)
 - __Circular and Rotating mode__ : Ignored. 
-- __Circular and Vectoring mode__: second component b, for which we will compute the magnitude and atan, which is $\sqrt{a^2 + b^2}$. This value is represented as a Q2.14 value. 
-- __Linear and Rotating mode__: Multiplicand b in variable fixed point format: to control where the position of 1.0 is. To give an example,  if register 0x03 is set to 11, this input (a) and input (B) represent a value in Q5.11 format.
-- __Linear and Vectoring mode__: b represents Numerator ($\frac{b}{a}$) in variable fixed point format. To control the position of 1.0, you have to use register 0x03. To give an example,  if register 0x03 is set to 11, this input (b) and input (a) represent a value in Q5.11 format. 
+- __Circular and Vectoring mode__: second component b, for which we will compute the magnitude and atan, which is $\sqrt{a^2 + b^2}$. Because the value is not scaled (Output multiplied by $K_{C}$), it's up to the user to set the fixed point format.
+- __Linear and Rotating mode__: Multiplicand b in variable fixed point format: to control where the position of 1.0 is. To give an example,  if register 0x03 is set to 11, this input b and input a represent a value in Q5.11 format.
+- __Linear and Vectoring mode__: b represents Numerator ($\frac{b}{a}$) in variable fixed point format. To control the position of 1.0, you have to use register 0x03. To give an example,  if register 0x03 is set to 11, this input b and input a represent a value in Q5.11 format. 
 - __Hyperbolic and Rotating mode__ Ignored. 
 - __Hyperbolic and Vectoring mode__ :  Second value B for hyperbolic mode. This value must be smaller than A; otherwise, the result will be incorrect. The Output here can represent any fixed point. The Output is __not scaled__ (not multiplied by inverse of $K_{H}$ due to resource limitations). It is up to user to either multiply by $\frac{1}{K_{H}} \approx \frac{1}{0.82816} \approx 1.207496$ or use it the computed value of $K_{H} \sqrt{a^{2} - b^{2}}$.
 
@@ -162,7 +162,7 @@ This section shows how to exercise the peripheral with small examples using pseu
 ### trigonometric function (sin and cos)
 In circular rotating mode, the core returns cos(a) and sin(a) simultaneously. Inputs/Outputs use Q2.14 fixed point (16-bit signed). Valid input range is about [-1.7178,1.7178] rad (+/-98.42 degrees) simultaneously. The input is an angle. 
 
-An example use of getting sin and cosine of 30 degrees (which is pi/6 \approx 0.52359877, which corresponds to b00100001_10000011 ).
+An example use of getting sin and cosine of 30 degrees (which is $\frac{\pi}{6} \approx 0.52359877$, which corresponds to b00100001_10000011 ).
 
 ```c
 // convert angle to fixed point value to angle
@@ -207,7 +207,7 @@ write_to_register(0x02, B);
 
 // 2) Start: is_rot=1, mode=01 (LINEAR), start=1
 //    Bit layout: [3]=is_rot, [2:1]=mode, [0]=start
-write_to_register(0,  0b1_01_1)
+write_to_register(0x00,  0b1_01_1)
 
 // 3) Wait until DONE (0=READY, 1=BUSY, 2=DONE)
 while (read_the_register(0x06) == 1) {}
@@ -240,7 +240,7 @@ write_to_register(0x02, B); // numerator
 
 // 4) Start: is_rot=0, mode=01 (LINEAR), start=1
 //    Bit layout: [3]=is_rot, [2:1]=mode, [0]=start
-write_to_register(0,  0b0_01_1);
+write_to_register(0x00,  0b0_01_1);
 
 // 5) Wait until DONE
 while (read_the_register(0x06) == 1) {}
@@ -297,14 +297,14 @@ int16_t B = 0b00001_10000000000;
 
 // 2) write to registers
 // put the value of A into the register
-write_to_register(1, A);
+write_to_register(0x01, A);
 
 // put the value of B into the register
-write_to_register(2, B);
+write_to_register(0x02, B);
 
 // 3) Start: is_rot=0, mode=10 (HYPERBOLIC), start=1
 //    Bit layout: [3]=is_rot, [2:1]=mode, [0]=start
-write_to_register(0, 0b0_10_1);
+write_to_register(0x00, 0b0_10_1);
 
 // 4) Wait until DONE
 while (read_the_register(0x06) == 1) {}
