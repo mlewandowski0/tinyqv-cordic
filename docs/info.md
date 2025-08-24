@@ -163,7 +163,7 @@ In circular rotating mode, the core returns cos(a) and sin(a) simultaneously. In
 
 An example use of getting sin and cosine of 30 degrees (which is pi/6 \approx 0.52359877, which corresponds to b00100001_10000011 ).
 
-"`c
+```c
 // convert angle to fixed point value to angle
 int16_t angle_q = 0b00100001_10000011;
 
@@ -189,7 +189,7 @@ int16_t sin_q = read_the_register(0x05);
 ### multiplication 
 Multiplication can be done using a linear (m = 0) rotating mode. In this case, you must set 3 registers: input A (0x01), input B(0x02) and Q-format (0x03). Below there is an example of multiplication of 1.25 * 2.5 within Q5.11 format (iiiii_ddddddddddd)
 
-"`c
+```c
 // 1) Select Q-format: F=11  --> Q5.11 (1.0 == 2048)
 write_to_register(0x03, 11);
 
@@ -216,12 +216,13 @@ while (read_the_register(0x06) == 1) {}
 int16_t prod_q = read_the_register(0x04);  
 // out2 = residual ( \approx 0 ideally)
 int16_t resid  = read_the_register(0x05);  ```
+```
 
 ### Division 
 Division can be done using linear (m = 0) and vectoring mode. In this case, we have to set 3 registers: input A (0x01), input B(0x02) and Q-format (0x03). Again, both inputs and the outputs use the Q-format from the 0x03 register.
  Below there is an example of division of 9.12 / 6.3 within Q5.11 format (iiiii_ddddddddddd)
 
-"`c
+```c
 // 1) Select Q-format: F=11  --> Q5.11
 write_to_register(0x03, 11);
 
@@ -252,7 +253,7 @@ int16_t resid  = read_the_register(0x05); // out2 = residual
 In hyperbolic rotating mode, the core will return a cosh(a) and a sinh(a) simultaneously. Inputs/outputs use Q2.14 fixed point (16-bit signed), and the valid input range is [-1.1161, 1.1161] due to resource limit. It is possible to obtain larger values than those in software using hyperbolic identities. 
 
 An example use of getting sinh and cosh of ln (2) (which is 0.69314, which corresponds to b00100001_10000011 ).
-"`c
+```c
 // 1) convert A = ln(2) = 0.693147 which 
 // is approximately 00_10110001011101
 int16_t A = 0b00_10110001011101; // 11357
@@ -277,7 +278,7 @@ The vectoring mode in hyperbolic mode might not look very interesting; however, 
 $$out1= K_{H}\sqrt{(x+1)^2 -(x-1)^2} =K_{H} \sqrt{x^2 +2x + 1 - x^2 + 2x - 1} = 2K_{H} \sqrt{x}$$
 Due to hardware limitations, the Output is not scaled. It is up to the programmer to interpret the value, and multiply it by a fixed point that matches the specification.
 In the example below, we compute the square root of 2.5, which is specified in Q5.11 format
-"`c
+```c
 // 0) decide on format
 
 // 1) Set the inputs in the decided format
@@ -310,7 +311,6 @@ while (read_the_register(0x06) == 1) {}
 // 5) Read out1 (Q5.11): out1 = 2 * K_H^{-1} * sqrt(x)
 uint16_t out1_q = read_the_register(0x04);
 ```
-
 
 ## External hardware
 
