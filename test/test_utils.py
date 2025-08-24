@@ -1,10 +1,30 @@
 from fixed_point import *
 import math 
 from cocotb.triggers import ClockCycles
+from enum import IntEnum
+
+# When submitting your design, change this to the peripheral number
+# in peripherals.v.  e.g. if your design is i_user_peri05, set this to 5.
+# The peripheral number is not used by the test harness.
+PERIPHERAL_NUM = 0
+
 
 def angle_to_rad(angle):
     return angle * math.pi / 180.
 
+def assert_close(dut, name, pred, true, rtol=1e-3, atol=1e-3):
+    
+    dut._log.info(f"checking for {name} : predicted = {pred:.5f}, true = {true:.5f}, rtol={rtol}, atol={atol}")
+
+    if not math.isfinite(pred) or not math.isfinite(true):
+        raise AssertionError(f"{name}: non-finite value (pred={pred}, true={true})")
+    if not (abs(pred - true) <= max(atol, rtol * abs(true))):
+        raise AssertionError(f"{name}: {pred:.6g} vs {true:.6g} (rtol={rtol}, atol={atol})")    
+
+# for checking trigonometric identities like cos^2(x) + sin^2(x) = 1
+def assert_invariant(name, val, expected, tol=5e-3):
+    if abs(val - expected) > tol:
+        raise AssertionError(f"{name} invariant: {val:.6g} vs {expected:.6g} (tol={tol})")
 
 def is_close_rtol(pred, true, r_tol = 1e-2):
     return abs(pred - true) / true < r_tol
@@ -16,129 +36,119 @@ def format_to_fixed_width(value, width):
     return format(value, f'0{width}b')
 
 
+class Mode(IntEnum):
+    CIRCULAR = 0
+    LINEAR = 1
+    HYPERBOLIC = 2
+
 # BITS for mode
 MODE_BITS           = 1
-CIRCULAR_MODE       = 0
-LINEAR_MODE         = 1
-HYPERBOLIC_MODE     = 2
-
-# 
 IS_ROTATING_BIT     = 3 
 
-# When submitting your design, change this to the peripheral number
-# in peripherals.v.  e.g. if your design is i_user_peri05, set this to 5.
-# The peripheral number is not used by the test harness.
-PERIPHERAL_NUM = 0
 
-async def test_sin_cos(dut, tqv, angle, tol_mode="rel", tol=0.01):
-    
-    angle_rad = angle_to_rad(angle)
-    angle_fixed_point = float_to_fixed(angle_rad, 16, 2)  # 16 bits, 2 integer bits
-    dut._log.info(f"angle of {angle} degrees (in rad = {angle_rad:.4f}), is angle_fixed_point = {angle_fixed_point:0{16}b}")
-    await tqv.write_word_reg(1, angle_fixed_point)
+def pack_config(mode : Mode, is_rotating , start):
+    v = 0
+    v |= int(mode) << MODE_BITS
+    v |= int(is_rotating) << IS_ROTATING_BIT
+    v |= int(start) 
+    return v
 
-    # configure the cordic : set the mode to ROTATING, CIRCULAR, and running
-    # this corresponds to setting it to       {1'b1,,  2'b00,         1'b1 }
+async def wait_done(dut,tqv, busy_val = 1, done_val = 2, 
+                    status_addr=6, max_cycles_before_timeout=100):
+    """ Poll status register until DONE or timeout. check BUSY"""
     
-    config_to_write = (CIRCULAR_MODE << MODE_BITS) | (1 << IS_ROTATING_BIT) | 1     
-    dut._log.info(f"Configuring CORDIC with {config_to_write:#04x} ({bin(config_to_write)}) (mode={CIRCULAR_MODE}, is_rotating=1, start=1)")
-    await tqv.write_byte_reg(0, config_to_write)
-   
-    # check if the device is busy
     await ClockCycles(dut.clk, 1)
-    #assert await tqv.read_byte_reg(6) == 1, "status register should be 1 (BUSY)"
+    status = await tqv.read_byte_reg(status_addr)
+    done_after = 1
 
-    await ClockCycles(dut.clk, 11)
-    #assert await tqv.read_byte_reg(6) == 2, "status register should be 2 (DONE)"
 
+    for _ in range(max_cycles_before_timeout):
+        await ClockCycles(dut.clk, 1)
+        done_after += 1
+        status = await tqv.read_byte_reg(status_addr)
+        if status == done_val:
+            return done_after
+
+    raise TimeoutError(f"Timeout waiting for DONE status (status={status}).")
+
+async def read_out_pair_signed(dut, tqv, width=16):
     out1 = await tqv.read_hword_reg(4)
     out2 = await tqv.read_hword_reg(5)
-    
-    # because we read unsigned 16bit half word, we need to conver it to signed representation
-    if out1 & (1<<15):
-        out1 = out1 - 2**16
-    
-    if out2 & (1<<15):
-        out2 = out2 - 2**16
 
+    return sign_extend(out1, width), sign_extend(out2, width)
+
+async def test_sin_cos(dut, tqv, angle_deg, width=16, rtol=0.01, atol=0.01):
+    
+    angle_rad = angle_to_rad(angle_deg)
+    angle_fixed_point = float_to_fixed(angle_rad, 16, 2)  # 16 bits, 2 integer bits
+    dut._log.info(f"[CIRC ROT] angle={angle_deg:.3f}° rad={angle_rad:.6f} z={format_bin(angle_fixed_point, width)}")
+    await tqv.write_word_reg(1, angle_fixed_point)
+
+
+    # configure the cordic : set the mode to ROTATING, CIRCULAR, and running
+    # this corresponds to setting it to       {1'b1,,  2'b00,         1'b1 }    
+    config_to_write = pack_config(Mode.CIRCULAR, is_rotating=1, start=1)    
+    dut._log.info(f"Configuring CORDIC with {config_to_write:#04x} ({bin(config_to_write)}) (mode={int(Mode.CIRCULAR)}, is_rotating=1, start=1)")
+    await tqv.write_byte_reg(0, config_to_write)
+    
+    done_after = await wait_done(dut, tqv, busy_val=1, done_val=2, status_addr=6, max_cycles_before_timeout=20)
+    dut._log.info(f"Started CORDIC, done after {done_after} cycles")
+    
+    out1_raw, out2_raw = await read_out_pair_signed(dut, tqv, width=width)  
     
     # conver to floating point for easier comparison
-    out1_float = fixed_to_float(out1, 16, 2)
-    out2_float = fixed_to_float(out2, 16, 2)
+    cos_predicted = fixed_to_float(out1_raw, 16, 2)
+    sin_predicted = fixed_to_float(out2_raw, 16, 2)
     sin_true = math.sin(angle_rad)
     cos_true = math.cos(angle_rad)
 
-    dut._log.info(f"out1 = {out1_float:.4f} (true = {cos_true:.4f}), out2 = {out2_float:.4f} (true = {sin_true:.4f})")
-    dut._log.info(f"out1/out2 = {out1_float/out2_float}")
-    
-    if tol_mode == "rel":
-        assert is_close_rtol(out1_float, cos_true, r_tol=tol), f"sin({angle}) = {sin_true}, got {out1_float}"
-        assert is_close_rtol(out2_float, sin_true, r_tol=tol), f"cos({angle}) = {cos_true}, got {out2_float}"
-    elif tol_mode == "abs":
-        assert is_close_atol(out1_float, cos_true, a_tol=tol), f"sin({angle}) = {sin_true}, got {out1_float}"
-        assert is_close_atol(out2_float, sin_true, a_tol=tol), f"cos({angle}) = {cos_true}, got {out2_float}"
-    else:
-        raise NotImplementedError(f"Unknown tolerance mode {tol_mode}")        
+    # Check outputs
+    assert_close(dut, f"cos({angle_deg})", cos_predicted, cos_true, rtol=rtol, atol=atol)
+    assert_close(dut, f"sin({angle_deg})", sin_predicted, sin_true, rtol=rtol, atol=atol)
 
+    # Invariant check : cos(x)^2 + sin(x)^2 = 1.0
+    assert_invariant("circular", cos_predicted*cos_predicted + sin_predicted*sin_predicted, 1.0, tol=5e-3)
+    return out1_raw, out2_raw
 
-    dut._log.info(f"Finished CORDIC computation for circular and rotating, angle {angle} degrees\n\n")
-    return out1, out2
-
-async def test_sinh_cosh(dut, tqv, x, tol_mode="rel", tol=0.01):
+async def test_sinh_cosh(dut, tqv, x, width=16, rtol=0.01, atol=0.01):
 
     angle_fixed_point = float_to_fixed(x, 16, 2)  # 16 bits, 2 integer bits
-
+    dut._log.info(f"[HYPERBOLIC ROT] inp={x:.4f} z={format_bin(angle_fixed_point, width)}")
     await tqv.write_word_reg(1, angle_fixed_point)
 
     # configure the cordic : set the mode to ROTATING, hyperbolic, and running
     # this corresponds to setting it to       {1'b1,  2'b10,         1'b1 }
-    
-    config_to_write = (HYPERBOLIC_MODE << MODE_BITS) | (1 << IS_ROTATING_BIT) | 1     
-    dut._log.info(f"Configuring CORDIC with {config_to_write:#04x} ({bin(config_to_write)}) (mode={CIRCULAR_MODE}, is_rotating=1, start=1)")
+    config_to_write = pack_config(Mode.HYPERBOLIC, is_rotating=1, start=1)
+    dut._log.info(f"Configuring CORDIC with {config_to_write:#04x} ({bin(config_to_write)}) (mode={int(Mode.HYPERBOLIC)}, is_rotating=1, start=1)")
     await tqv.write_byte_reg(0, config_to_write)
    
-    # check if the device is busy
-    await ClockCycles(dut.clk, 1)
-    #assert await tqv.read_byte_reg(6) == 1, "status register should be 1 (BUSY)"
+    done_after = await wait_done(dut, tqv, busy_val=1, done_val=2, status_addr=6, max_cycles_before_timeout=20)
+    dut._log.info(f"Started CORDIC, done after {done_after} cycles")
 
-    await ClockCycles(dut.clk, 11)
-    #assert await tqv.read_byte_reg(6) == 2, "status register should be 2 (DONE)"
-
-    out1 = await tqv.read_hword_reg(4)
-    out2 = await tqv.read_hword_reg(5)
-    
-    # because we read unsigned 16bit half word, we need to conver it to signed representation
-    if out1 & (1<<15):
-        out1 = out1 - 2**16
-    
-    if out2 & (1<<15):
-        out2 = out2 - 2**16
+    out1_raw, out2_raw = await read_out_pair_signed(dut, tqv, width=width)  
 
     # conver to floating point for easier comparison
-    out1_float = fixed_to_float(out1, 16, 2)
-    out2_float = fixed_to_float(out2, 16, 2)
+    cosh_predicted = fixed_to_float(out1_raw, 16, 2)
+    sinh_predicted = fixed_to_float(out2_raw, 16, 2)
     sinh_true = math.sinh(x)
     cosh_true = math.cosh(x)
 
-    dut._log.info(f"out1 = {out1_float:.4f} (true = {cosh_true:.4f}), out2 = {out2_float:.4f} (true = {sinh_true:.4f})")
+    # Check outputs
+    assert_close(dut, f"cosh({x})", cosh_predicted, cosh_true, rtol=rtol, atol=atol)
+    assert_close(dut, f"sinh({x})", sinh_predicted, sinh_true, rtol=rtol, atol=atol)
 
-    if tol_mode == "rel":
-        assert is_close_rtol(out1_float, cosh_true, r_tol=tol), f"cosh({x}) = {cosh_true}, got {out1_float}"
-        assert is_close_rtol(out2_float, sinh_true, r_tol=tol), f"sinh({x}) = {sinh_true}, got {out2_float}"
-    elif tol_mode == "abs":
-        assert is_close_atol(out1_float, cosh_true, a_tol=tol), f"cosh({x}) = {cosh_true}, got {out1_float}"
-        assert is_close_atol(out2_float, sinh_true, a_tol=tol), f"sinh({x}) = {sinh_true}, got {out2_float}"
-    else:
-        raise NotImplementedError(f"Unknown tolerance mode {tol_mode}")        
-
-    dut._log.info(f"Finished CORDIC computation for hyperbolic and rotating, input x={x}\n\n")
-    return out1, out2
+    # Invariant check : cosh^2(x) - sinh^2(x) = 1.0
+    assert_invariant("hyperbolic", cosh_predicted*cosh_predicted - sinh_predicted*sinh_predicted, 1.0, tol=5e-3)
+    return out1_raw, out2_raw
 
 async def use_multiplication_mode_input_float(dut, tqv, a, b, alpha_one_position, 
-                                              width=16, XY_INT=5, Z_INT=5, tol_mode="rel", tol=0.01):
+                                              width=16, rtol=1e-2, atol=1e-3):
     
-    A = float_to_fixed(a, width=width, integer_part=XY_INT)   
-    B = float_to_fixed(b, width=width, integer_part=Z_INT) 
+    XY_INT = width - alpha_one_position
+    Z_INT = width - alpha_one_position
+
+    A = float_to_fixed(a, width=width, integer_part=XY_INT)
+    B = float_to_fixed(b, width=width, integer_part=Z_INT)
 
     await tqv.write_word_reg(1, A)
     await tqv.write_word_reg(2, B)
@@ -147,132 +157,109 @@ async def use_multiplication_mode_input_float(dut, tqv, a, b, alpha_one_position
     # configure the cordic : set the mode to ROTATING, LINEAR, and running
     # this corresponds to setting it to       {1'b1,,  2'b00,         1'b1 }
     
-    config_to_write = (LINEAR_MODE << MODE_BITS) | (1 << IS_ROTATING_BIT) | 1     
-    dut._log.info(f"Configuring CORDIC with {config_to_write:#04x} ({bin(config_to_write)}) (mode={CIRCULAR_MODE}, is_rotating=1, start=1)")
+    config_to_write = pack_config(Mode.LINEAR, is_rotating=1, start=1) 
+    dut._log.info(f"[LIN ROT MUL] a={a}, b={b}, A={format_bin(A,width)}, B={format_bin(B,width)}, alpha_pos={alpha_one_position}")
     dut._log.info(f"input to module is A={A}(float={a}, fixed={float_to_fixed(A, width, XY_INT)}), B={B}(float={b}, fixed={float_to_fixed(B, width, Z_INT)})")
     await tqv.write_byte_reg(0, config_to_write)
+    
+    await wait_done(dut, tqv)
    
-    # check if the device is busy
-    await ClockCycles(dut.clk, 1)
-    #assert await tqv.read_byte_reg(6) == 1, "status register should be 1 (BUSY)"
+    x_raw, y_raw = await read_out_pair_signed(dut, tqv, width=width)
+    x_f = fixed_to_float(x_raw, width, XY_INT)
+    y_f = fixed_to_float(y_raw, width, XY_INT)
 
-    await ClockCycles(dut.clk, 11)
-    #assert await tqv.read_byte_reg(6) == 2, "status register should be 2 (DONE)"
+    dut._log.info(f"in floating point a={a}, b={b}, prod={a * b}")
+    dut._log.info(f"output from module is out1={x_raw}(float={x_f}, fixed=), out2={y_raw}(float={y_f})")
 
-    out1 = await tqv.read_hword_reg(4)
-    out2 = await tqv.read_hword_reg(5)
-    
-    
-    # because we read unsigned 16bit half word, we need to conver it to signed representation
-    if out1 & (1<<15):
-        out1 = out1 - 2**16
-    
-    if out2 & (1<<15):
-        out2 = out2 - 2**16
+    prod_true = a * b
 
-    dut._log.info(f"bin(out1) = {out1:0{16}b}, bin(out2) = {out2:0{16}b}")
-    dut._log.info(f"out1 = {out1}, out2 = {out2}")
-    dut._log.info(f"fixed_to_float(out1) = {fixed_to_float(out1, width, XY_INT)}, fixed_to_float(out2) = {fixed_to_float(out2, width, Z_INT)}")
-    dut._log.info(f"true value = {a * b} (float)")
+    # compare to
+    assert_close(dut, f"mul({fixed_to_float(A, width, XY_INT)}, {fixed_to_float(B, width, Z_INT)})", x_f, prod_true, rtol=rtol, atol=atol)
     dut._log.info(f"\n")
+    return x_raw, y_raw
 
-    return out1, out2
+async def use_division_mode_float_input(dut, tqv, a, b, alpha_one_position, width=16, tol_mode="rel", tol=0.01):
 
-async def use_division_mode_float_input(dut, tqv, a, b, alpha_one_position, tol_mode="rel", tol=0.01,
-                            width=16, XY_INT=5, Z_INT=5):
+    XY_INT = width - alpha_one_position
+    Z_INT  = width - alpha_one_position
 
+    # compute b / a
     A = float_to_fixed(a, width=width, integer_part=XY_INT)
-    B = float_to_fixed(b, width=width, integer_part=XY_INT)
+    B = float_to_fixed(b, width=width, integer_part=Z_INT) 
 
+    dut._log.info(f"[LIN ROT MUL] a={a}, b={b}, A={format_bin(A,width)}, B={format_bin(B,width)}, alpha_pos={alpha_one_position}")
+    dut._log.info(f"input to module is A={A}(float={a}, fixed={float_to_fixed(A, width, XY_INT)}), B={B}(float={b}, fixed={float_to_fixed(B, width, Z_INT)})")    
     await tqv.write_word_reg(1, A)
     await tqv.write_word_reg(2, B)
     await tqv.write_byte_reg(3, alpha_one_position)
-
-    # configure the cordic : set the mode to ROTATING, LINEAR, and running
-    # this corresponds to setting it to       {1'b0,,  2'b00,         1'b1 }
     
-    config_to_write = (LINEAR_MODE << MODE_BITS) |  1     
-    dut._log.info(f"Configuring CORDIC with {config_to_write:#04x} ({bin(config_to_write)}) (mode={CIRCULAR_MODE}, is_rotating=0, start=1)")
-    dut._log.info(f"input to module is A={A}(float={a}, fixed={float_to_fixed(A, width, XY_INT)}), B={B}(float={b}, fixed={float_to_fixed(B, width, Z_INT)})")
-    await tqv.write_byte_reg(0, config_to_write)
-   
-    # check if the device is busy
-    await ClockCycles(dut.clk, 1)
-    #assert await tqv.read_byte_reg(6) == 1, "status register should be 1 (BUSY)"
+    cfg = pack_config(Mode.LINEAR, is_rotating=0, start=1)
 
-    await ClockCycles(dut.clk, 11)
-    #assert await tqv.read_byte_reg(6) == 2, "status register should be 2 (DONE)"
+    dut._log.info(f"[LIN VEC DIV] a={a}, b={b}, A={format_bin(A,width)}, B={format_bin(B,width)}, alpha_pos={alpha_one_position}")
+    await tqv.write_byte_reg(0, cfg)
+    await wait_done(dut, tqv)
+    
+    x_raw, y_raw = await read_out_pair_signed(dut, tqv, width=width)
+    x_f = fixed_to_float(x_raw, width, XY_INT)
+    y_f = fixed_to_float(y_raw, width, XY_INT)
+    
+    div_true = b / a
 
-    out1 = await tqv.read_hword_reg(4)
-    out2 = await tqv.read_hword_reg(5)
+    dut._log.info(f"in floating point a={a}, b={b}, div={b/a}")
+    dut._log.info(f"output from module is out1={x_raw}(float={x_f}, fixed=), out2={y_raw}(float={y_f})")
     
-    
-    # because we read unsigned 16bit half word, we need to conver it to signed representation
-    if out1 & (1<<15):
-        out1 = out1 - 2**16
-    
-    if out2 & (1<<15):
-        out2 = out2 - 2**16
-
-    dut._log.info(f"out1 = {out1:0{16}b}, out2 = {out2:0{16}b}")
-    dut._log.info(f"out1 = {out1}, out2 = {out2}")
-    dut._log.info(f"fixed_to_float(out1) = {fixed_to_float(out1, width, XY_INT)}, fixed_to_float(out2) = {fixed_to_float(out2, width, Z_INT)}")
-    dut._log.info(f"true value = {b / a} (float)")
+    # compare against output
+    assert_close(dut, f"div({fixed_to_float(B, width, Z_INT)}, {fixed_to_float(A, width, XY_INT)})", x_f, div_true, rtol=tol if tol_mode=="rel" else 0, atol=tol if tol_mode=="abs" else 0)
     dut._log.info(f"\n")
+    return x_raw, y_raw
 
-    return out1, out2
+async def test_vectoring_hyperbolic(dut, tqv, a, b, alpha_one_position, 
+                                    width=16, XY_INT=5, Z_INT=5, rtol=1e-2, atol=1e-3):
 
-async def test_vectoring_hyperbolic(dut, tqv, x, y, tol_mode="rel", tol=0.01,
-                                    integer_bits=5):
+    x_float = float_to_fixed(a, 16, XY_INT)  # 16 bits, 5 integer bits
+    y_float = float_to_fixed(b, 16, Z_INT)   # 16 bits, 5 integer bits
 
-    x_float = float_to_fixed(x, 16, integer_bits)  # 16 bits, 5 integer bits
-    y_float = float_to_fixed(y, 16, integer_bits)  # 16 bits, 5 integer bits
-
+    # write the valeus 
     await tqv.write_word_reg(1, x_float)
     await tqv.write_word_reg(2, y_float)
 
     # configure the cordic : set the mode to Vectoring, Hyperbolic, and running
-    # this corresponds to setting it to       {1'b0,  2'b10,         1'b1 }
-    
-    config_to_write = (HYPERBOLIC_MODE << MODE_BITS) | 1     
-    dut._log.info(f"Configuring CORDIC with {config_to_write:#04x} ({bin(config_to_write)}) (mode={CIRCULAR_MODE}, is_rotating=0, start=1)")
+    # this corresponds to setting it to       {1'b0,  2'b10,         1'b1 }    
+    dut._log.info(f"[HYP VEC] a={a}, b={b}, A={format_bin(x_float,width)}, B={format_bin(y_float,width)}, alpha_pos={alpha_one_position}")
+
+    # configure the cordic : set the mode to HYPERBOLIC, VECTORING, and running
+    # this corresponds to setting it to       {1'b0,,  2'b10,         1'b1 }    
+    config_to_write = pack_config(Mode.HYPERBOLIC, is_rotating=0, start=1)    
+    dut._log.info(f"Configuring CORDIC with {config_to_write:#04x} ({bin(config_to_write)}) (mode={int(Mode.HYPERBOLIC)}, is_rotating=0, start=1)")
     await tqv.write_byte_reg(0, config_to_write)
-   
-    # check if the device is busy
-    await ClockCycles(dut.clk, 1)
-    #assert await tqv.read_byte_reg(6) == 1, "status register should be 1 (BUSY)"
 
-    await ClockCycles(dut.clk, 11)
-    #assert await tqv.read_byte_reg(6) == 2, "status register should be 2 (DONE)"
+    done_after = await wait_done(dut, tqv, busy_val=1, done_val=2, status_addr=6, max_cycles_before_timeout=20)
+    dut._log.info(f"Started CORDIC, done after {done_after} cycles")
 
-    out1 = await tqv.read_hword_reg(4)
-    out2 = await tqv.read_hword_reg(5)
+    out1_raw, out2_raw = await read_out_pair_signed(dut, tqv, width=width)  
+
+    # convert to floating point for easier comparison
+    out1_float = fixed_to_float(out1_raw, 16, width=width)
+    out2_float = fixed_to_float(out2_raw, 16, width=width)
+
+    return  out1_raw, out1_float, out2_raw, out2_float
+
+async def _run_vectoring_once(dut, tqv, x_float, y_float, WIDTH=16, XY_INT=5):
     
-    # because we read unsigned 16bit half word, we need to conver it to signed representation
-    if out1 & (1<<15):
-        out1 = out1 - 2**16
+    A = float_to_fixed(x_float, WIDTH, XY_INT)
+    B = float_to_fixed(y_float, WIDTH, XY_INT)
     
-    if out2 & (1<<15):
-        out2 = out2 - 2**16
-
-    # conver to floating point for easier comparison
-    out1_float = fixed_to_float(out1, 16, integer_bits)
-    out2_float = fixed_to_float(out2, 16, integer_bits)
-    """
-    sinh_true = math.sinh(x)
-    cosh_true = math.cosh(x)
-
-    dut._log.info(f"out1 = {out1_float:.4f} (true = {cosh_true:.4f}), out2 = {out2_float:.4f} (true = {sinh_true:.4f})")
-
-    if tol_mode == "rel":
-        assert is_close_rtol(out1_float, cosh_true, r_tol=tol), f"cosh({x}) = {cosh_true}, got {out1_float}"
-        assert is_close_rtol(out2_float, sinh_true, r_tol=tol), f"sinh({x}) = {sinh_true}, got {out2_float}"
-    elif tol_mode == "abs":
-        assert is_close_atol(out1_float, cosh_true, a_tol=tol), f"cosh({x}) = {cosh_true}, got {out1_float}"
-        assert is_close_atol(out2_float, sinh_true, a_tol=tol), f"sinh({x}) = {sinh_true}, got {out2_float}"
-    else:
-        raise NotImplementedError(f"Unknown tolerance mode {tol_mode}")        
-
-    dut._log.info(f"Finished CORDIC computation for hyperbolic and rotating, input x={x}\n\n")
-    """
-    return out1, out1_float, out2, out2_float
+    await tqv.write_word_reg(1, A) # write first input 
+    await tqv.write_word_reg(2, B) # write second input
+    
+    # Configure Hyperbolic Vectoring mode
+    cfg = pack_config(Mode.HYPERBOLIC, is_rotating=0, start=1)
+    await tqv.write_byte_reg(0, cfg)
+    await wait_done(dut, tqv)
+    
+    # read results 
+    out1_raw, out2_raw = await read_out_pair_signed(dut, tqv, width=WIDTH)
+    
+    r_out = fixed_to_float(out1_raw, WIDTH, XY_INT)  # decode with XY format
+    z_out = fixed_to_float(out2_raw, WIDTH, 2)   # decode with Z format (Q2.14)
+    return r_out, z_out, out1_raw, out2_raw

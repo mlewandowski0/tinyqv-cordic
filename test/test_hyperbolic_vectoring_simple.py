@@ -8,8 +8,9 @@ from cocotb.triggers import ClockCycles
 from tqv import TinyQV
 from fixed_point import *
 import math 
-from test_utils import test_vectoring_hyperbolic
+from test_utils import test_vectoring_hyperbolic, _run_vectoring_once, assert_close
 import numpy as np 
+import random
 
 # When submitting your design, change this to the peripheral number
 # in peripherals.v.  e.g. if your design is i_user_peri05, set this to 5.
@@ -17,7 +18,7 @@ import numpy as np
 PERIPHERAL_NUM = 0
 
 @cocotb.test()
-async def test_hyperbolic_basic(dut):
+async def test_hyperbolic_vectoring_basic(dut):
     dut._log.info("Start")
 
     # Set the clock period to 100 ns (10 MHz)
@@ -36,27 +37,39 @@ async def test_hyperbolic_basic(dut):
 
     dut._log.info("Test project behavior")
 
-    # Test register write and read back
-    value = await tqv.read_word_reg(0) 
-
-    # read the identificator
-    assert value == 0xbadcaffe, "when reading from reg 0, we should see magic string '0xbadcaffe'"
-
-    # Check the status register : we don't yet run anything, it should be 0
-    assert await tqv.read_byte_reg(6) == 0, "status register should be 0 (READY TO BE RUN)"
+    # Reset & ID
+    await tqv.reset()
+    value = await tqv.read_word_reg(0)
+    assert value == 0xbadcaffe, "reg0 should return 0xbadcaffe"
+    assert await tqv.read_byte_reg(6) == 0, "status must be READY (0)"
     
+    # Formats
+    WIDTH  = 16
+    XY_INT = 5    # Q5.11 for X/Y/r
+    Z_INT  = 2    # Q2.14 for Z
+
     K_m1 = 0.82816
     K = 1 / K_m1
- 
-    # test few well known values
-    x = 5.0
-    y = 4.0
-    out1, out1_float, out2, out2_float = await test_vectoring_hyperbolic(dut, tqv, x=x, y=y, tol_mode="abs", tol=0.001,
-                                                                         integer_bits=5)
-
-    print(f"float to fixed for K = {float_to_fixed(K, 16, 5):16b}")
-    out1_float = K * out1_float
-    out2_float = K * out2_float
     
-    dut._log.info(f"CORDIC output fixed point: out1={out1}, out2={out2}")
-    dut._log.info(f"CORDIC output floating point: out1={out1_float}, out2={out2_float}")
+    test_vectors = [
+        (5.0, 4.0), 
+        (3.0, 2.0), 
+        (2.0, 1.0),
+        (1.5, 1.0), 
+        (1.25, 0.75),
+        (1.75, -0.5), 
+        (2.5, -1.0),
+    ]
+ 
+    for x, y in test_vectors:
+        out1, out2, *_ = await _run_vectoring_once(dut, tqv, x, y, WIDTH=16, XY_INT=XY_INT)
+
+        out1 *= K
+        
+        r_true = math.sqrt(x*x - y*y)
+        z_true = math.atanh(y/x)
+        
+        s = f"{x}^2 + {y}^2"
+        assert_close(dut, "testing R = \sqrt{" + s + "}", out1, r_true,  rtol=1e-3, atol=2e-3)
+        assert_close(dut, "testing Z = atanh(" + str(y) + "/" + str(x) + ")", out2, z_true, rtol=1e-3, atol=2e-3)        
+    

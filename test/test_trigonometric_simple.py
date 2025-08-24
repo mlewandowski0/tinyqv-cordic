@@ -15,6 +15,9 @@ from test_utils import test_sin_cos
 # The peripheral number is not used by the test harness.
 PERIPHERAL_NUM = 0
 
+def _isclose(pred, truth, rtol, atol):
+    return abs(pred - truth) <= max(atol, rtol * abs(truth))
+
 @cocotb.test()
 async def test_trigonometric_basic(dut):
     dut._log.info("Start")
@@ -32,66 +35,66 @@ async def test_trigonometric_basic(dut):
 
     # Reset
     await tqv.reset()
-
-    dut._log.info("Test project behavior")
+    dut._log.info("Testing Project Behaviour : Test Trigonometric Simple ")
 
     # Test register write and read back
-    value = await tqv.read_word_reg(0) 
-
-    # read the identificator
-    assert value == 0xbadcaffe, "when reading from reg 0, we should see magic string '0xbadcaffe'"
-
-    # Check the status register : we don't yet run anything, it should be 0
-    assert await tqv.read_byte_reg(6) == 0, "status register should be 0 (READY TO BE RUN)"
- 
-    # first test : compute the sin(30 degrees) and cos(30 degrees)
-
-    # the input to circular mode in rotating, is only angle, stored as radians, fixed point 
-    # arithmetic in signed 1.14 bits format ( for FIXED WIDTH = 16, in general case, in signed 1.{FIXED_WIDTH-2} format )
-    # 30 degrees = pi / 6 = 0.52359877 \approx (in fixed point) b00100001_10000011
-    await test_sin_cos(dut, tqv, angle=30, tol_mode="rel",)
-
-    await test_sin_cos(dut, tqv, angle=45, tol_mode="rel",)
-    await test_sin_cos(dut, tqv, angle=60, tol_mode="rel",)
+    value = await tqv.read_word_reg(0)
+    assert value == 0xBADCaffe, "reg0 must return magic 0xBADCaffe"
+    assert await tqv.read_byte_reg(6) == 0, "status should be 0 (READY)"
     
-    # 75 degrees and 15 degrees is different by 1 percent
-    await test_sin_cos(dut, tqv, angle=75, tol_mode="rel", tol=0.025)
-    await test_sin_cos(dut, tqv, angle=15, tol_mode="rel", tol=0.025)
-
-    # test the negatives
-    await test_sin_cos(dut, tqv, angle=-15, tol_mode="rel", tol=0.025)
-    await test_sin_cos(dut, tqv, angle=-30, tol_mode="rel", tol=0.025)
-    await test_sin_cos(dut, tqv, angle=-45, tol_mode="rel", tol=0.025)
-    await test_sin_cos(dut, tqv, angle=-60, tol_mode="rel", tol=0.025)
-    await test_sin_cos(dut, tqv, angle=-75, tol_mode="rel", tol=0.025)
-
-    # The following assersion is just an example of how to check the output values.
-    # Change it to match the actual expected output of your module:
-    # assert dut.uo_out.value == 0x96
-
-    # Input value should be read back from register 1
-    #assert await tqv.read_byte_reg(4) == 30
-
-    # Zero should be read back from register 2
-    #assert await tqv.read_word_reg(8) == 0
-
-    # A second write should work
-    #await tqv.write_word_reg(0, 40)
-    #assert dut.uo_out.value == 70
-
-    # Test the interrupt, generated when ui_in[6] goes high
-    #dut.ui_in[6].value = 1
-    #3await ClockCycles(dut.clk, 1)
-    #dut.ui_in[6].value = 0
-
-    # Interrupt asserted
-    #await ClockCycles(dut.clk, 3)
-    #assert await tqv.is_interrupt_asserted()
-
-    # Interrupt doesn't clear
-    #await ClockCycles(dut.clk, 10)
-    #assert await tqv.is_interrupt_asserted()
+    # tolerances, sizes etc. 
+    WIDTH = 16 
+    INT_BITS = 2 # for circular mode, this is fixed format of Q2.14 
+    FRAC_BITS = WIDTH - INT_BITS
+    LSB = 2**(-FRAC_BITS)
+    rtol = 1e-4
+    atol = 1e-4
     
-    # Write bottom bit of address 8 high to clear
-    #await tqv.write_byte_reg(8, 1)
-    #assert not await tqv.is_interrupt_asserted()
+    # 1) compute few and well known simple values, using the CORDIC algorithm
+    to_test = [90, 75, 60, 45, 30, 15, 0, -15, -30, -45, -60, -70, -90]
+    
+    max_abs_err_cos = float("-inf")
+    max_abs_err_sin = float("-inf")
+    
+    for angle in to_test:
+        cos_raw, sin_raw = await test_sin_cos(dut, tqv, angle_deg=angle)
+        
+        cos_pred = fixed_to_float(cos_raw, WIDTH, INT_BITS)
+        sin_pred = fixed_to_float(sin_raw, WIDTH, INT_BITS)
+
+        cos_true, sin_true = math.cos(math.radians(angle)), math.sin(math.radians(angle))
+        max_abs_err_cos = max(max_abs_err_cos, abs(cos_pred - cos_true))
+        max_abs_err_sin = max(max_abs_err_sin, abs(sin_pred - sin_true))
+        
+    dut._log.info(
+        f"[summary] max |cos error|={max_abs_err_cos:.6g}, "
+        f"max |sin error|={max_abs_err_sin:.6g}, LSB={LSB:.6g}")
+    
+    # 2) check for symmetry 
+    rtol = 1e-3
+    atol = 1e-3
+    sym_angles = [15, 30, 45, 60, 75]
+    for a in sym_angles:
+        # +a
+        cos_pos_raw, sin_pos_raw = await test_sin_cos(dut, tqv, angle_deg=a, width=WIDTH)
+        cos_pred_pos = fixed_to_float(cos_pos_raw, WIDTH, INT_BITS)
+        sin_pred_pos = fixed_to_float(sin_pos_raw, WIDTH, INT_BITS)
+
+        # -a
+        cos_neg_raw, sin_neg_raw = await test_sin_cos(dut, tqv, angle_deg=-a, width=WIDTH)
+        cos_pred_neg = fixed_to_float(cos_neg_raw, WIDTH, INT_BITS)
+        sin_pred_neg = fixed_to_float(sin_neg_raw, WIDTH, INT_BITS)
+
+        assert _isclose(cos_pred_neg,  cos_pred_pos, rtol, atol), f"cos symmetry failed at {a}°"
+        assert _isclose(sin_pred_neg, -sin_pred_pos, rtol, atol), f"sin oddness failed at {a}°"
+        
+    # 3) check boundaries and edges 
+    angles = [-98, -0.01, 0, 0.01, 98]
+    for angle in angles:
+        cos_raw, sin_raw = await test_sin_cos(dut, tqv, angle_deg=angle)
+        cos_pred = fixed_to_float(cos_raw, WIDTH, INT_BITS)
+        sin_pred = fixed_to_float(sin_raw, WIDTH, INT_BITS)
+
+        cos_true, sin_true = math.cos(math.radians(angle)), math.sin(math.radians(angle))
+        assert _isclose(cos_pred, cos_true, rtol, atol), f"cos failed at {angle}°"
+        assert _isclose(sin_pred, sin_true, rtol, atol), f"sin failed at {angle}°"

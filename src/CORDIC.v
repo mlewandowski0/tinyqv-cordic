@@ -179,8 +179,16 @@ module CORDIC #(
             end
             `HYPERBOLIC_MODE:
             begin
-                out1 = x;
-                out2 = y;
+                if (rot_latched)
+                begin
+                    out1 = x;
+                    out2 = y;
+                end 
+                else 
+                begin
+                    out1 = x;
+                    out2 = z;
+                end
             end
             default:
             begin

@@ -53,8 +53,7 @@ async def test_trigonometric_sweep_and_vis(dut):
 
     # Reset
     await tqv.reset()
-
-    dut._log.info("Test project behavior")
+    dut._log.info("Test project behavior: Sweep of sine and cosine")
 
     # Test register write and read back
     value = await tqv.read_word_reg(0) 
@@ -65,113 +64,156 @@ async def test_trigonometric_sweep_and_vis(dut):
     # Check the status register : we don't yet run anything, it should be 0
     assert await tqv.read_byte_reg(6) == 0, "status register should be 0 (READY TO BE RUN)"
  
+    # Fixed-point format for circular mode (Q2.14)
+    WIDTH = 16
+    INT_BITS = 2 
+    FRAC_BITS = WIDTH - INT_BITS
+    LSB = 2.0 ** (-FRAC_BITS)
 
-    # first test : compute the sin(30 degrees) and cos(30 degrees)
-
-    # the input to circular mode in rotating, is only angle, stored as radians, fixed point 
-    # arithmetic in signed 1.14 bits format ( for FIXED WIDTH = 16, in general case, in signed 1.{FIXED_WIDTH-2} format )
-    # 30 degrees = pi / 6 = 0.52359877 \approx (in fixed point) b00100001_10000011
-    sines, cosines = [], []
-
-    linspace = np.linspace(-90, 90, 180)
-    sines_true = np.sin(linspace * np.pi / 180.)
-    cosines_true = np.cos(linspace * np.pi / 180.)
-
-
-    for angle in linspace:
-        out1, out2 = await test_sin_cos(dut, tqv, angle=angle, tol_mode="abs", tol=0.025)
-        cosines.append(fixed_to_float(out1, 16, 2))
-        sines.append(fixed_to_float(out2, 16, 2))  # sin is in out2
-
-    # Compute the Mean Absolute Error (MAE) for the current sweep
-    MAE_sin = np.mean(np.abs(sines - sines_true))
-    MAE_cos = np.mean(np.abs(cosines - cosines_true))
-    dut._log.info(f"MAE for angle sweep: for sin = {MAE_sin:.5f}, for cos = {MAE_cos:.5f}")
+    # Tolerances
+    rtol = 1e-4
+    atol = 1e-4
     
+    # sweep angles in 1 degrees steps, inclusive
+    degs = np.arange(-90., 91.0, 1.0)
+
+    sin_true = np.sin(np.deg2rad(degs))
+    cos_true = np.cos(np.deg2rad(degs))
     
-    # Make plots for visualization
+    sins = []
+    coss = []
+
+    for ang in degs:
+            # Runs the op + per-angle checks (incl. invariant)
+            cos_raw, sin_raw = await test_sin_cos(dut, tqv, angle_deg=ang)
+        
+            
+            # Read back produced values as float, to store for plots/metrics
+            cos_pred = fixed_to_float(cos_raw, WIDTH, INT_BITS)
+            sin_pred = fixed_to_float(sin_raw, WIDTH, INT_BITS)
+            
+            coss.append(cos_pred)
+            sins.append(sin_pred)
+             
+    sins = np.array(sins)
+    coss = np.array(coss)
+
+    # Metrics
+    sin_err = sins - sin_true
+    cos_err = coss - cos_true
+    mae_sin = float(np.mean(np.abs(sin_err)))
+    mae_cos = float(np.mean(np.abs(cos_err)))
+    rmse_sin = float(np.sqrt(np.mean(sin_err**2)))
+    rmse_cos = float(np.sqrt(np.mean(cos_err**2)))
+    maxerr_sin = float(np.max(np.abs(sin_err)))
+    maxerr_cos = float(np.max(np.abs(cos_err)))
+
+    # Unit-circle residual (should be ~0)
+    unit_resid = coss**2 + sins**2 - 1.0
+    rms_unit = float(np.sqrt(np.mean(unit_resid**2)))
+    max_unit = float(np.max(np.abs(unit_resid)))
+
+    dut._log.info("\n\n---- Summary of the sweep ----")
+    dut._log.info(f"LSB = {LSB:.6g}")
+    dut._log.info(f"MAE(sin)={mae_sin:.6g} : in LSBs {mae_sin/LSB:.3f}")
+    dut._log.info(f"MAE(cos)={mae_cos:.6g} : in LSBs {mae_cos/LSB:.3f}")
+    dut._log.info(f"RMSE(sin)={rmse_sin:.6g}) : in LSBs {rmse_sin/LSB:.3f}")
+    dut._log.info(f"RMSE(cos)={rmse_cos:.6g} : in LSBs {rmse_cos/LSB:.3f}")
+    dut._log.info(f"MAXERR(sin)={maxerr_sin:.6g} : in LSBs {maxerr_sin/LSB:.3f}")
+    dut._log.info(f"MAXERR(cos)={maxerr_cos:.6g} : in LSBs {maxerr_cos/LSB:.3f}")
+    dut._log.info(f"RMS(unit_resid)={rms_unit:.6g} : in LSBs {rms_unit/LSB:.3f}")
+    dut._log.info(f"MAX(unit_resid)={max_unit:.6g} : in LSBs {max_unit/LSB:.3f}")
+
+    # output directory for saving the artificats 
     OUTDIR = Path(os.getenv("CORDIC_PLOTS_DIR", os.getenv("GITHUB_WORKSPACE", "."))) / "artifacts/cordic"
     OUTDIR.mkdir(parents=True, exist_ok=True)
-    
+
+    # plot sine
     plt.figure(figsize=(14, 4))
     plt.subplot(1, 2, 1)
-    plt.title(f"Sine Sweep : MAE = {MAE_sin:.5f}")
-    plt.plot(linspace, sines_true, label='True Sine', color='blue')
-    plt.plot(linspace, sines, label='Sine from hardware block', linestyle='--', color='red')
-    plt.xlabel("Angle (in degrees)")
-    plt.ylabel("Sin(x) value")
-    plt.xticks([-90, -75, -60, -45, -30, -15, 0, 15, 30, 45, 60, 75, 90])
+    plt.title(f"Sine Sweep: MAE={mae_sin:.5f}, RMSE={rmse_sin:.5f}")
+    plt.plot(degs, sin_true, label="True sin")
+    plt.plot(degs, sins, "--", label="CORDIC sin")
+    plt.xlabel("Angle (deg)")
+    plt.ylabel("sin(x)")
+    plt.xticks(range(-90, 91, 15))
     plt.legend()
+    plt.grid(True, alpha=0.3)
 
+    # plot residual
     plt.subplot(1, 2, 2)
-    plt.plot(linspace, sines_true - sines, label='residue (true - predicted)', color='red')
+    plt.title("Residual: sin_pred - sin_true")
+    plt.plot(degs, sin_err, label="Residual")
+    plt.xlabel("Angle (deg)")
+    plt.ylabel("Error")
+    plt.xticks(range(-90, 91, 15))
+    plt.grid(True, alpha=0.3)
     plt.legend()
-    plt.xlabel("Angle (in degrees)")
-    plt.ylabel("Residue : true - predicted")
-    plt.xticks([-90, -75, -60, -45, -30, -15, 0, 15, 30, 45, 60, 75, 90])
-    plt.savefig(os.path.join(OUTDIR, "sine.png"),  dpi=180, bbox_inches="tight")
+    plt.savefig(OUTDIR / "sine.png", dpi=180, bbox_inches="tight")
     plt.close()
 
-
+    # plot cosine
     plt.figure(figsize=(14, 4))
     plt.subplot(1, 2, 1)
-    plt.title(f"Cosine Sweep : MAE = {MAE_cos:.5f}")
-    plt.plot(linspace, cosines_true, label='True Cosine', color='blue')
-    plt.plot(linspace, cosines, label='Cosine from hardware block', linestyle='--', color='red')
-    plt.xlabel("Angle (in degrees)")
-    plt.ylabel("Cos(x) value")
-    plt.xticks([-90, -75, -60, -45, -30, -15, 0, 15, 30, 45, 60, 75, 90])
+    plt.title(f"Cosine Sweep: MAE={mae_cos:.5f}, RMSE={rmse_cos:.5f}")
+    plt.plot(degs, cos_true, label="True cos")
+    plt.plot(degs, coss, "--", label="CORDIC cos")
+    plt.xlabel("Angle (deg)")
+    plt.ylabel("cos(x)")
+    plt.xticks(range(-90, 91, 15))
     plt.legend()
-
+    plt.grid(True, alpha=0.3)
+    
+    # plot residual
     plt.subplot(1, 2, 2)
-    plt.plot(linspace, cosines_true - cosines, label='residue (true - predicted)', color='red')
+    plt.title("Residual: cos_pred - cos_true")
+    plt.plot(degs, cos_err, label="Residual")
+    plt.xlabel("Angle (deg)")
+    plt.ylabel("Error")
+    plt.xticks(range(-90, 91, 15))
+    plt.grid(True, alpha=0.3)
     plt.legend()
-    plt.xlabel("Angle (in degrees)")
-    plt.ylabel("Residue : true - predicted")
-    plt.xticks([-90, -75, -60, -45, -30, -15, 0, 15, 30, 45, 60, 75, 90])
-    plt.savefig(os.path.join(OUTDIR, "cosine.png"), dpi=180, bbox_inches="tight")
+    plt.savefig(OUTDIR / "cosine.png", dpi=180, bbox_inches="tight")
     plt.close()
+
+    # Plot unit-circle residual
+    plt.figure(figsize=(7, 4))
+    plt.title(f"Unit-circle residual (cos²+sin²-1): RMS={rms_unit:.5e}, MAX={max_unit:.5e}")
+    plt.plot(degs, unit_resid, label="cos²+sin²-1")
+    plt.xlabel("Angle (deg)")
+    plt.ylabel("Residual")
+    plt.xticks(range(-90, 91, 15))
+    plt.grid(True, alpha=0.3)
+    plt.legend()
+    plt.savefig(OUTDIR / "unit_circle_residual.png", dpi=180, bbox_inches="tight")
+    plt.close()
+
+    # CSVs
+    np.savetxt(
+        OUTDIR / "sine_vs_true.csv",
+        np.c_[degs, sin_true, sins, sin_err],
+        delimiter=",",
+        header="deg,true_sin,cordic_sin,residual",
+        comments=""
+    )
+    np.savetxt(
+        OUTDIR / "cosine_vs_true.csv",
+        np.c_[degs, cos_true, coss, cos_err],
+        delimiter=",",
+        header="deg,true_cos,cordic_cos,residual",
+        comments=""
+    )
+    np.savetxt(
+        OUTDIR / "unit_circle_residual.csv",
+        np.c_[degs, unit_resid],
+        delimiter=",",
+        header="deg,cos2_plus_sin2_minus_1",
+        comments=""
+    )
     
-    # (optional) also stash numeric data for later:
-    np.savetxt(os.path.join(OUTDIR, "sine_vs_true.csv"),
-            np.c_[linspace, sines_true, sines],
-            delimiter=",", header="deg,true_sin,cordic_sin", comments="")
-    np.savetxt(os.path.join(OUTDIR, "cosine_vs_true.csv"),
-            np.c_[linspace, cosines_true, cosines],
-            delimiter=",", header="deg,true_cos,cordic_cos", comments="")
-        
-    assert MAE_cos < 0.01, "Mean absolute error for cosine should be less then 0.01"
-    assert MAE_sin < 0.01, "Mean absolute error for sine should be less then 0.01"
+    # fairly big mae tolerances
+    assert mae_sin < 0.01, f"Mean absolute error (sin) should be < 0.01, is {mae_sin:.6g}"
+    assert mae_cos < 0.01, f"Mean absolute error (cos) should be < 0.01, is {mae_cos:.6g}"
 
-
-    
-    # The following assersion is just an example of how to check the output values.
-    # Change it to match the actual expected output of your module:
-    # assert dut.uo_out.value == 0x96
-
-    # Input value should be read back from register 1
-    #assert await tqv.read_byte_reg(4) == 30
-
-    # Zero should be read back from register 2
-    #assert await tqv.read_word_reg(8) == 0
-
-    # A second write should work
-    #await tqv.write_word_reg(0, 40)
-    #assert dut.uo_out.value == 70
-
-    # Test the interrupt, generated when ui_in[6] goes high
-    #dut.ui_in[6].value = 1
-    #3await ClockCycles(dut.clk, 1)
-    #dut.ui_in[6].value = 0
-
-    # Interrupt asserted
-    #await ClockCycles(dut.clk, 3)
-    #assert await tqv.is_interrupt_asserted()
-
-    # Interrupt doesn't clear
-    #await ClockCycles(dut.clk, 10)
-    #assert await tqv.is_interrupt_asserted()
-    
-    # Write bottom bit of address 8 high to clear
-    #await tqv.write_byte_reg(8, 1)
-    #assert not await tqv.is_interrupt_asserted()
+    # residual for invariant shouldn't be big
+    assert max_unit < 0.03, f"Max unit-circle residual too large, is {max_unit:.6g}"

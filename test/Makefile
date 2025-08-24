@@ -40,8 +40,7 @@ VERILOG_SOURCES += $(PWD)/tb.v
 TOPLEVEL = tb
 
 # MODULE is the basename of the Python test file
-MODULE = test_hyperbolic_vectoring_simple,test_hyperbolic_vectoring_square_vis,test_circular_rotating_sweep_and_vis,test_hyperbolic_rotating_simple,test_hyperbolic_rotating_sweep_and_vis,test_linear_simple,test_trigonometric_simple#,test_hyperbolic_vectoring_log_vis
-
+MODULE = test_trigonometric_simple,test_linear_simple,test_hyperbolic_rotating_simple,test_hyperbolic_vectoring_simple,test_circular_rotating_sweep_and_vis,test_hyperbolic_rotating_sweep_and_vis,test_hyperbolic_vectoring_square_vis
 
 # include cocotb's make rules to take care of the simulator setup
 include $(shell cocotb-config --makefiles)/Makefile.sim

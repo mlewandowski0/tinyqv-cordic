@@ -1,6 +1,6 @@
 
 
-def to_signed_binary(n, bits=8):
+def format_bin(n, bits=8):
     return format(n & (2**bits - 1), f'0{bits}b')
 
 def signed_to_bin(value, width):
@@ -37,3 +37,11 @@ def fixed_mul(a, b, width, integer_part):
     product = a * b
     product >>= frac
     return simulate_overflow(product, width)
+
+
+def sign_extend(value, width): 
+    if value & (1 << (width - 1)):
+        value -= (1 << width)
+    return value
+
+

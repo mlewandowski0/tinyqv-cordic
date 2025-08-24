@@ -50,7 +50,7 @@ Let $A, B$ be the register inputs and $out1, out2$ the outputs.
 | 0    | Vectoring |   a    | b | $\frac{b}{a}$| error $\epsilon$|
 | -1    | Rotating      |   a    | - | $cosh(a)$ | $sinh(a)$|
 | -1    | Vectoring     |   a    |  b | $K_{H} \sqrt{a^2 - b^2}$ |$tanh^{-1}(\frac{b}{a})$|
-| -1    | Vectoring    |   a + 1.0    | a - 1.0 |$2 K_{H}\sqrt{a}$|error $\epsilon$|
+| -1    | Vectoring    |   a + 1.0    | a - 1.0 |$2 K_{H}\sqrt{a}$|0.5 * ln(a)|
 
 ### Note about Scaling
 - The rotating path returns the values directly and can be interpreted right away (pre-scaling).

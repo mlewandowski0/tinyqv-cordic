@@ -9,6 +9,7 @@ from tqv import TinyQV
 from fixed_point import *
 import math 
 from test_utils import use_multiplication_mode_input_float, use_division_mode_float_input
+import random
 
 # When submitting your design, change this to the peripheral number
 # in peripherals.v.  e.g. if your design is i_user_peri05, set this to 5.
@@ -32,76 +33,62 @@ async def test_multiplication(dut):
 
     # Reset
     await tqv.reset()
+    dut._log.info("Testing Project Behaviour : Test Trigonometric Simple ")
 
-    dut._log.info("Test project behavior")
-
-    # Test register write and read back
-    value = await tqv.read_word_reg(0) 
-
-    # read the identificator
-    assert value == 0xbadcaffe, "when reading from reg 0, we should see magic string '0xbadcaffe'"
-
-    # Check the status register : we don't yet run anything, it should be 0
-    assert await tqv.read_byte_reg(6) == 0, "status register should be 0 (READY TO BE RUN)"
- 
-    width = 16
-    XY_INT = 5
-    Z_INT  = 5
-    alpha_one_position = 11
-
-    # alpha posiition is 11, therefore
-    #  A = 5b.11b
-    a = 0.75
-    b = 2.0
-    await use_multiplication_mode_input_float(dut, tqv, a, b, alpha_one_position, 
-                                              tol_mode="rel", tol=0.01, width=width, XY_INT=XY_INT, Z_INT=Z_INT)
-
+    # Check the magic value and if its ready
+    val = await tqv.read_word_reg(0)
+    assert val == 0xBADCaffe, "reg0 should return magic 0xBADCaffe"
+    assert await tqv.read_byte_reg(6) == 0, "status must be READY (0)"
     
-    # alpha posiition is 11, therefore
-    #  A = 5b.11b
-    a = 1.25
-    b = 2.5
-    await use_multiplication_mode_input_float(dut, tqv, a, b, alpha_one_position, 
-                                              tol_mode="rel", tol=0.01, width=width, XY_INT=XY_INT, Z_INT=Z_INT)
-
-
-    # alpha posiition is 11, therefore
-    #  A = 5b.11b
-    a = 1.1
-    b = 0.341
-    A = float_to_fixed(a, width=width, integer_part=XY_INT)   
-    B = float_to_fixed(b, width=width, integer_part=XY_INT) 
-    alpha_one_position = 11 
-    await use_multiplication_mode_input_float(dut, tqv, a, b, alpha_one_position, 
-                                              tol_mode="rel", tol=0.01, width=width, XY_INT=XY_INT, Z_INT=Z_INT)
-
-    # alpha posiition is 11, therefore
-    #  A = 5b.11b
-    a = 4.0
-    b = 4.0
-    A = float_to_fixed(a, width=width, integer_part=XY_INT)   
-    B = float_to_fixed(b, width=width, integer_part=XY_INT) 
-    alpha_one_position = 11 
-    await use_multiplication_mode_input_float(dut, tqv, a, b, alpha_one_position, 
-                                              tol_mode="rel", tol=0.01, width=width, XY_INT=XY_INT, Z_INT=Z_INT)
-
-
-    # alpha posiition is 11, therefore
-    #  A = 5b.11b
-    a = 0.125
-    b = 0.512
-    A = float_to_fixed(a, width=width, integer_part=XY_INT)   
-    B = float_to_fixed(b, width=width, integer_part=XY_INT) 
-    alpha_one_position = 11 
-    await use_multiplication_mode_input_float(dut, tqv, a, b, alpha_one_position, 
-                                              tol_mode="rel", tol=0.01, width=width, XY_INT=XY_INT, Z_INT=Z_INT)
-
-
+    # DUT numeric formats
+    WIDTH = 16
+    XY_INT = 5   # out1/out2 integer bits for X/Y domain
+    Z_INT  = 5   # Z integer bits (if used by DUT)
+    FRAC   = WIDTH - XY_INT
+    LSB    = 2**(-(WIDTH- XY_INT))
     
-    # the input to circular mode in rotating, is only angle, stored as radians, fixed point 
-    # arithmetic in signed 1.14 bits format ( for FIXED WIDTH = 16, in general case, in signed 1.{FIXED_WIDTH-2} format )
+    # alpha-one bit position to test
+    alpha_positions = [9,10,11]
     
+    # Basic vectors of hand-picked cases
+    cases = [
+        (0.0, 0.0),
+        (0.0, 3.25),
+        (1.0, 5.5),
+        (-1.0, 5.5),
+        (0.5, -3.75),
+        (-2.0, -2.0),
+        (1.25, 2.5),
+        (0.75, 2.0),
+        (1.1, 0.341),
+        (3.0, 3.0),           
+        (0.125, 0.512),
+    ]
+    
+    # per case checks 
+    for a, b in cases:
+        for alpha in alpha_positions:
+            # check the testcase
+            xr, yr = await use_multiplication_mode_input_float(dut, tqv, a, b, alpha, width=WIDTH, rtol=1e-2, atol=1e-2)
+            
+            # Commutativity check 
+            xr2, yr2 = await use_multiplication_mode_input_float(dut, tqv, b, a, alpha, width=WIDTH, rtol=1e-2, atol=1e-2)
 
+
+    # randomized property tests (but fix seed to make CI deterministic)
+    random.seed(1234)
+    checks = 20
+    
+    for i in range(checks):
+        a = random.uniform(-4.0, 4.0)
+        b = random.uniform(-4.0, 4.0)
+        
+        for alpha in alpha_positions:
+            # check the testcase
+            xr, yr = await use_multiplication_mode_input_float(dut, tqv, a, b, alpha, width=WIDTH, rtol=1e-2, atol=1e-2)
+            
+            # Commutativity check 
+            xr2, yr2 = await use_multiplication_mode_input_float(dut, tqv, b, a, alpha, width=WIDTH, rtol=1e-2, atol=1e-2)
 
 @cocotb.test()
 async def test_division(dut):
@@ -118,43 +105,46 @@ async def test_division(dut):
     # harness interface to read and write the registers.
     tqv = TinyQV(dut, PERIPHERAL_NUM)
 
-    width = 16
-    XY_INT = 5
-    Z_INT  = 5
-
     # Reset
     await tqv.reset()
+    dut._log.info("Testing Project Behaviour : Test Trigonometric Simple ")
 
-    dut._log.info("Test project behavior")
-
-    # Test register write and read back
-    value = await tqv.read_word_reg(0) 
-
-    # read the identificator
-    assert value == 0xbadcaffe, "when reading from reg 0, we should see magic string '0xbadcaffe'"
-
-    # Check the status register : we don't yet run anything, it should be 0
-    assert await tqv.read_byte_reg(6) == 0, "status register should be 0 (READY TO BE RUN)"
- 
- 
+    # Check the magic value and if its ready
+    val = await tqv.read_word_reg(0)
+    assert val == 0xBADCaffe, "reg0 should return magic 0xBADCaffe"
+    assert await tqv.read_byte_reg(6) == 0, "status must be READY (0)"
+    
+    # DUT numeric formats
+    WIDTH = 16
+    XY_INT = 5   # out1/out2 integer bits for X/Y domain
+    Z_INT  = 5   # Z integer bits (if used by DUT)
+    FRAC   = WIDTH - XY_INT
+    LSB    = 2**(-(WIDTH- XY_INT))
+    
+    
     alpha_one_position = 11
-    # computing 1.5 / 0.6
-    a = 0.6
-    b = 1.5
-    out1, out2 = await use_division_mode_float_input(dut, tqv, a, b, alpha_one_position, tol_mode="rel", tol=0.01)
+    # basic cases 
+    basic = [
+        (0.6, 1.5),
+        (0.6, 2.0),
+        (6.3, 9.12),
+        (8.12, 11.22),
+        (1.25, 2.5),
+        (0.75, -2.25),
+    ]
+    
+    for a, b in basic:
+        
+        xr, _ = await use_division_mode_float_input(dut, tqv, a, b, alpha_one_position,
+                                                    width=WIDTH, tol=1e-2)
+        q = fixed_to_float(xr, WIDTH, XY_INT)
+        
 
-
-    # computing 2.0 / 0.6
-    a = 0.6
-    b = 2.0
-    out1, out2 = await use_division_mode_float_input(dut, tqv, a, b, alpha_one_position, tol_mode="rel", tol=0.01)
-
-    # computing 9.12 / 6.3
-    a = 6.3
-    b = 9.12
-    out1, out2 = await use_division_mode_float_input(dut, tqv, a, b, alpha_one_position, tol_mode="rel", tol=0.01)
-
-    # computing 2.0 / 0.6
-    a = 8.12
-    b = 11.22
-    out1, out2 = await use_division_mode_float_input(dut, tqv, a, b, alpha_one_position, tol_mode="rel", tol=0.01)
+    # randomized property tests (but fix seed to make CI deterministic)
+    random.seed(42)
+    for _ in range(40):
+        a = random.uniform(0.5, 3.2)
+        b = random.uniform(0.2, 5.0)
+        xr, _ = await use_division_mode_float_input(dut, tqv, a, b, alpha_one_position,
+                                                    width=WIDTH, tol=1e-2)
+        q = fixed_to_float(xr, WIDTH, XY_INT)
