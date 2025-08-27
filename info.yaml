@@ -20,7 +20,6 @@ project:
     - "tqvp_CORDIC.v"
     - "CORDIC.v"
     - "CORDIC_iteration.v"
-    - "CORDIC_angles_ROM.v"
     - "CORDIC_angles_ROM_comb.v"
     - "CORDIC_atanh_ROM_comb.v"
     - "defines.v"

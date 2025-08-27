@@ -5,7 +5,7 @@
 SIM ?= icarus
 TOPLEVEL_LANG ?= verilog
 SRC_DIR = $(PWD)/../src
-PROJECT_SOURCES = tqvp_CORDIC.v CORDIC.v CORDIC_iteration.v CORDIC_angles_ROM.v CORDIC_angles_ROM_comb.v defines.v CORDIC_atanh_ROM_comb.v
+PROJECT_SOURCES = tqvp_CORDIC.v CORDIC.v CORDIC_iteration.v CORDIC_angles_ROM_comb.v defines.v CORDIC_atanh_ROM_comb.v
 ADDITIONAL_SOURCES = tt_wrapper.v test_harness/*.sv
 
 ifneq ($(GATES),yes)
